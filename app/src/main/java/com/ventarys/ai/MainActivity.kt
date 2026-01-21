@@ -261,7 +261,7 @@ fun AppDrawer(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Image(
-                painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                painter = painterResource(id = R.mipmap.ic_launcher_foreground),
                 contentDescription = "App Logo",
                 modifier = Modifier.size(40.dp)
             )
@@ -305,7 +305,7 @@ fun GenericScreen(title: String, onMenuClick: () -> Unit, content: @Composable C
             CenterAlignedTopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Image(painter = painterResource(id = R.drawable.ic_launcher_foreground), contentDescription = "App Logo", modifier = Modifier.size(32.dp))
+                        Image(painter = painterResource(id = R.mipmap.ic_launcher_foreground), contentDescription = "App Logo", modifier = Modifier.size(32.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(title)
                     }
@@ -391,7 +391,7 @@ fun AboutScreen(onMenuClick: () -> Unit) {
             verticalArrangement = Arrangement.Center
         ) {
             Image(
-                painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                painter = painterResource(id = R.mipmap.ic_launcher_foreground),
                 contentDescription = "App Logo",
                 modifier = Modifier.size(120.dp)
             )
@@ -429,7 +429,7 @@ fun ChatScreen(viewModel: ChatViewModel, onMenuClick: () -> Unit) {
             CenterAlignedTopAppBar(
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Image(painter = painterResource(id = R.drawable.ic_launcher_foreground), contentDescription = "App Logo", modifier = Modifier.size(32.dp))
+                        Image(painter = painterResource(id = R.mipmap.ic_launcher_foreground), contentDescription = "App Logo", modifier = Modifier.size(32.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Ventarys AI")
                     }
