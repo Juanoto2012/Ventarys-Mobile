@@ -170,7 +170,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val client = OkHttpClient.Builder()
-        .callTimeout(0, TimeUnit.MINUTES)
+        .callTimeout(60, TimeUnit.MINUTES)
         .build()
 
     init {
