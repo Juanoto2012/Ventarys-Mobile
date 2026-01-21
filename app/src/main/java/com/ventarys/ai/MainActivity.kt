@@ -1,35 +1,50 @@
 package com.ventarys.ai
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.outlined.History
-import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Settings
-import androidx.compose.material.icons.outlined.StarOutline
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import com.ventarys.ai.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -45,14 +60,29 @@ import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
+// --- NAVIGATION --- //
+object AppDestinations {
+    const val CHAT_ROUTE = "chat"
+    const val HISTORY_ROUTE = "history"
+    const val SETTINGS_ROUTE = "settings"
+    const val ABOUT_ROUTE = "about"
+}
+
+enum class ThemeOption {
+    System, Light, Dark
+}
+
 class MainActivity : ComponentActivity() {
     private val chatViewModel: ChatViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge()
         setContent {
-            VentarysChatTheme {
-                VentarysChatApp(viewModel = chatViewModel)
+            val themeOptionState = remember { mutableStateOf(ThemeOption.System) }
+            VentarysChatTheme(themeOption = themeOptionState.value) {
+                val navController = rememberNavController()
+                VentarysNavHost(navController = navController, viewModel = chatViewModel, themeOptionState = themeOptionState)
             }
         }
     }
@@ -84,8 +114,23 @@ private val CoffeePeachDarkColorScheme = darkColorScheme(
 )
 
 @Composable
-fun VentarysChatTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
-    val colorScheme = if (darkTheme) CoffeePeachDarkColorScheme else CoffeePeachLightColorScheme
+fun VentarysChatTheme(themeOption: ThemeOption, content: @Composable () -> Unit) {
+    val useDarkTheme = when (themeOption) {
+        ThemeOption.System -> isSystemInDarkTheme()
+        ThemeOption.Light -> false
+        ThemeOption.Dark -> true
+    }
+    val colorScheme = if (useDarkTheme) CoffeePeachDarkColorScheme else CoffeePeachLightColorScheme
+
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = (view.context as ComponentActivity).window
+            window.statusBarColor = Color.Transparent.toArgb()
+            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !useDarkTheme
+        }
+    }
+
     MaterialTheme(colorScheme = colorScheme, typography = Typography(), content = content)
 }
 
@@ -106,7 +151,7 @@ class ChatViewModel : ViewModel() {
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val client = OkHttpClient.Builder()
-        .callTimeout(4, TimeUnit.MINUTES) // Increased timeout to 4 minutes
+        .callTimeout(0, TimeUnit.SECONDS) // Indefinite timeout
         .build()
 
     fun sendMessage(userInput: String) {
@@ -125,6 +170,10 @@ class ChatViewModel : ViewModel() {
                 _isLoading.value = false
             }
         }
+    }
+
+    fun clearChatHistory() {
+        _messages.value = emptyList()
     }
 
     private suspend fun generatePrivateText(history: List<APIMessage>): String {
@@ -158,93 +207,258 @@ class ChatViewModel : ViewModel() {
 }
 
 // --- COMPOSABLES --- //
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun VentarysChatApp(viewModel: ChatViewModel) {
+fun VentarysNavHost(navController: NavHostController, viewModel: ChatViewModel, themeOptionState: MutableState<ThemeOption>) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route ?: AppDestinations.CHAT_ROUTE
 
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            AppDrawer(onClose = { scope.launch { drawerState.close() } })
+            AppDrawer(
+                currentRoute = currentRoute,
+                onNavigate = { route ->
+                    navController.navigate(route) { launchSingleTop = true }
+                },
+                onClose = { scope.launch { drawerState.close() } }
+            )
         }
     ) {
-        val listState = rememberLazyListState()
-        val messages by viewModel.messages.collectAsState()
-        val isLoading by viewModel.isLoading.collectAsState()
-
-        LaunchedEffect(messages.size) {
-            if (messages.isNotEmpty()) {
-                listState.animateScrollToItem(messages.size)
+        NavHost(navController = navController, startDestination = AppDestinations.CHAT_ROUTE) {
+            composable(AppDestinations.CHAT_ROUTE) {
+                ChatScreen(viewModel = viewModel, onMenuClick = { scope.launch { drawerState.open() } })
             }
-        }
-
-        Scaffold(
-            topBar = {
-                CenterAlignedTopAppBar(
-                    title = { Text("Ventarys AI") },
-                    navigationIcon = {
-                        IconButton(onClick = { scope.launch { drawerState.open() } }) {
-                            Icon(
-                                imageVector = Icons.Default.Menu,
-                                contentDescription = "Sidebar Menu"
-                            )
-                        }
-                    },
-                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            composable(AppDestinations.HISTORY_ROUTE) {
+                HistoryScreen(onMenuClick = { scope.launch { drawerState.open() } })
+            }
+            composable(AppDestinations.SETTINGS_ROUTE) {
+                SettingsScreen(
+                    viewModel = viewModel,
+                    onMenuClick = { scope.launch { drawerState.open() } },
+                    themeOption = themeOptionState.value,
+                    onThemeChange = { themeOptionState.value = it }
                 )
-            },
-            bottomBar = {
-                MessageInput(isProcessing = isLoading, onSend = { viewModel.sendMessage(it) })
             }
-        ) { paddingValues ->
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(paddingValues)
-                    .padding(horizontal = 16.dp),
-                state = listState
-            ) {
-                items(messages) {
-                    message ->
-                    MessageBubble(message = message)
-                }
-                if (isLoading) {
-                    item { LoadingIndicator() }
-                }
+            composable(AppDestinations.ABOUT_ROUTE) {
+                AboutScreen(onMenuClick = { scope.launch { drawerState.open() } })
             }
         }
     }
 }
 
 @Composable
-fun AppDrawer(onClose: () -> Unit) {
+fun AppDrawer(
+    currentRoute: String,
+    onNavigate: (String) -> Unit,
+    onClose: () -> Unit
+) {
     ModalDrawerSheet {
-        Text("Ventarys AI", modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.titleLarge)
+        Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                contentDescription = "App Logo",
+                modifier = Modifier.size(40.dp)
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+            Text("Ventarys AI", style = MaterialTheme.typography.titleLarge)
+        }
         Divider()
+        NavigationDrawerItem(
+            icon = { Icon(Icons.Outlined.Forum, contentDescription = "Chat") },
+            label = { Text("Chat") },
+            selected = currentRoute == AppDestinations.CHAT_ROUTE,
+            onClick = { onNavigate(AppDestinations.CHAT_ROUTE); onClose() }
+        )
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.History, contentDescription = "History") },
             label = { Text("Historial") },
-            selected = false,
-            onClick = { onClose() }
+            selected = currentRoute == AppDestinations.HISTORY_ROUTE,
+            onClick = { onNavigate(AppDestinations.HISTORY_ROUTE); onClose() }
         )
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.Settings, contentDescription = "Settings") },
             label = { Text("Ajustes") },
-            selected = false,
-            onClick = { onClose() }
+            selected = currentRoute == AppDestinations.SETTINGS_ROUTE,
+            onClick = { onNavigate(AppDestinations.SETTINGS_ROUTE); onClose() }
         )
         Divider(modifier = Modifier.padding(vertical = 8.dp))
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.Info, contentDescription = "About") },
             label = { Text("Acerca de") },
-            selected = false,
-            onClick = { onClose() }
+            selected = currentRoute == AppDestinations.ABOUT_ROUTE,
+            onClick = { onNavigate(AppDestinations.ABOUT_ROUTE); onClose() }
         )
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun GenericScreen(title: String, onMenuClick: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Image(painter = painterResource(id = R.drawable.ic_launcher_foreground), contentDescription = "App Logo", modifier = Modifier.size(32.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(title)
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onMenuClick) {
+                        Icon(Icons.Default.Menu, "Sidebar Menu")
+                    }
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            )
+        }
+    ) { paddingValues ->
+        Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            content()
+        }
+    }
+}
+
+@Composable
+fun HistoryScreen(onMenuClick: () -> Unit) {
+    GenericScreen(title = "Historial", onMenuClick = onMenuClick) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("No hay chats guardados")
+        }
+    }
+}
+
+@Composable
+fun SettingsScreen(
+    viewModel: ChatViewModel,
+    onMenuClick: () -> Unit,
+    themeOption: ThemeOption,
+    onThemeChange: (ThemeOption) -> Unit
+) {
+    GenericScreen(title = "Ajustes", onMenuClick = onMenuClick) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text("Tema de la aplicación", style = MaterialTheme.typography.titleMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+            Column(Modifier.selectableGroup()) {
+                ThemeOption.values().forEach { option ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(56.dp)
+                            .selectable(
+                                selected = (option == themeOption),
+                                onClick = { onThemeChange(option) },
+                                role = Role.RadioButton
+                            )
+                            .padding(horizontal = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = (option == themeOption),
+                            onClick = null // null recommended for accessibility with screenreaders
+                        )
+                        Text(
+                            text = option.name,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.padding(start = 16.dp)
+                        )
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Divider()
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(onClick = { viewModel.clearChatHistory() }, modifier = Modifier.fillMaxWidth()) {
+                Text("Borrar historial del chat actual")
+            }
+        }
+    }
+}
+
+@Composable
+fun AboutScreen(onMenuClick: () -> Unit) {
+    val context = LocalContext.current
+    GenericScreen(title = "Acerca de", onMenuClick = onMenuClick) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Image(
+                painter = painterResource(id = R.drawable.ic_launcher_foreground),
+                contentDescription = "App Logo",
+                modifier = Modifier.size(120.dp)
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Versión 1.0.0", style = MaterialTheme.typography.labelMedium)
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Creado por JNTX Studio", style = MaterialTheme.typography.titleLarge)
+            Spacer(modifier = Modifier.height(8.dp))
+            TextButton(onClick = {
+                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Juanoto2012"))
+                context.startActivity(intent)
+            }) {
+                Text("GitHub: Juanoto2012")
+            }
+        }
+    }
+}
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ChatScreen(viewModel: ChatViewModel, onMenuClick: () -> Unit) {
+    val listState = rememberLazyListState()
+    val messages by viewModel.messages.collectAsState()
+    val isLoading by viewModel.isLoading.collectAsState()
+
+    LaunchedEffect(messages.size) {
+        if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.size)
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            CenterAlignedTopAppBar(
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Image(painter = painterResource(id = R.drawable.ic_launcher_foreground), contentDescription = "App Logo", modifier = Modifier.size(32.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Ventarys AI")
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onMenuClick) {
+                        Icon(Icons.Default.Menu, "Sidebar Menu")
+                    }
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+            )
+        },
+        bottomBar = {
+            MessageInput(isProcessing = isLoading, onSend = { viewModel.sendMessage(it) })
+        }
+    ) { paddingValues ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 16.dp),
+            state = listState
+        ) {
+            items(messages) { message ->
+                MessageBubble(message = message)
+            }
+            if (isLoading) {
+                item { LoadingIndicator() }
+            }
+        }
+    }
+}
 
 @Composable
 fun MessageInput(isProcessing: Boolean, onSend: (String) -> Unit) {
