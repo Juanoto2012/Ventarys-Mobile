@@ -92,7 +92,10 @@ fun WelcomeScreen(modifier: Modifier = Modifier) {
 @Composable
 fun MessageInput(isProcessing: Boolean, onSend: (String) -> Unit) {
     var text by remember { mutableStateOf("") }
-    Surface(color = MaterialTheme.colorScheme.background) {
+    Surface(
+        color = MaterialTheme.colorScheme.background,
+        modifier = Modifier.navigationBarsPadding().imePadding()
+    ) {
         Row(
             modifier = Modifier.padding(16.dp).fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
@@ -152,7 +155,7 @@ fun MessageBubble(message: Message) {
 @Composable
 fun ManualMarkdownText(text: String, modifier: Modifier = Modifier) {
     val boldRegex = """\*\*(.*?)\*\*""".toRegex()
-    val listPrefixRegex = """^\s*([*\-])\s+(.*)""".toRegex()
+    val listPrefixRegex = """^\s*([*-])\s+(.*)""".toRegex()
 
     Column(modifier = modifier) {
         text.lines().forEach { line ->
