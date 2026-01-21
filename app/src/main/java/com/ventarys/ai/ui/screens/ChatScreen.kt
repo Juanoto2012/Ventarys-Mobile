@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.Menu
@@ -14,15 +15,17 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.ventarys.ai.ChatViewModel
 import com.ventarys.ai.Message
 import com.ventarys.ai.R
-import androidx.compose.ui.res.painterResource
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -131,7 +134,9 @@ fun MessageInput(isProcessing: Boolean, onSend: (String) -> Unit) {
 fun MessageBubble(message: Message) {
     if (message.isFromUser) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp, horizontal = 8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 4.dp, horizontal = 8.dp),
             horizontalArrangement = Arrangement.End
         ) {
             Card(
@@ -143,10 +148,14 @@ fun MessageBubble(message: Message) {
         }
     } else {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp),
             verticalAlignment = Alignment.Top
         ) {
-            Image(painterResource(R.mipmap.ic_launcher_foreground), "AI Icon", Modifier.size(32.dp).padding(end = 8.dp))
+            Image(painterResource(R.mipmap.ic_launcher_foreground), "AI Icon", Modifier
+                .size(32.dp)
+                .padding(end = 8.dp))
             ManualMarkdownText(text = message.text, modifier = Modifier.weight(1f))
         }
     }
@@ -156,6 +165,8 @@ fun MessageBubble(message: Message) {
 fun ManualMarkdownText(text: String, modifier: Modifier = Modifier) {
     val boldRegex = """\*\*(.*?)\*\*""".toRegex()
     val listPrefixRegex = """^\s*([*-])\s+(.*)""".toRegex()
+    val linkRegex = """\[(.*?)\]\((.*?)\)""".toRegex()
+    val uriHandler = LocalUriHandler.current
 
     Column(modifier = modifier) {
         text.lines().forEach { line ->
@@ -165,16 +176,33 @@ fun ManualMarkdownText(text: String, modifier: Modifier = Modifier) {
 
             val annotatedString = buildAnnotatedString {
                 var lastIndex = 0
-                boldRegex.findAll(lineContent).forEach { matchResult ->
+
+                val allMatches = (boldRegex.findAll(lineContent).map { it to "bold" } +
+                        linkRegex.findAll(lineContent).map { it to "link" })
+                    .sortedBy { it.first.range.first }
+
+                allMatches.forEach { (matchResult, type) ->
                     val startIndex = matchResult.range.first
                     if (startIndex > lastIndex) {
                         append(lineContent.substring(lastIndex, startIndex))
                     }
-                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
-                        append(matchResult.groupValues[1])
+
+                    if (type == "bold") {
+                        withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
+                            append(matchResult.groupValues[1])
+                        }
+                    } else { // link
+                        val linkText = matchResult.groupValues[1]
+                        val url = matchResult.groupValues[2]
+                        pushStringAnnotation(tag = "URL", annotation = url)
+                        withStyle(style = SpanStyle(color = MaterialTheme.colorScheme.primary, textDecoration = TextDecoration.Underline)) {
+                            append(linkText)
+                        }
+                        pop()
                     }
                     lastIndex = matchResult.range.last + 1
                 }
+
                 if (lastIndex < lineContent.length) {
                     append(lineContent.substring(lastIndex))
                 }
@@ -183,10 +211,27 @@ fun ManualMarkdownText(text: String, modifier: Modifier = Modifier) {
             if (isListItem) {
                 Row(Modifier.padding(bottom = 4.dp)) {
                     Text("•", modifier = Modifier.padding(end = 8.dp))
-                    Text(annotatedString)
+                    ClickableText(
+                        text = annotatedString,
+                        onClick = { offset ->
+                            annotatedString.getStringAnnotations(tag = "URL", start = offset, end = offset)
+                                .firstOrNull()?.let { annotation ->
+                                    uriHandler.openUri(annotation.item)
+                                }
+                        }
+                    )
                 }
             } else {
-                Text(annotatedString, modifier = Modifier.padding(bottom = 4.dp))
+                ClickableText(
+                    text = annotatedString,
+                    modifier = Modifier.padding(bottom = 4.dp),
+                    onClick = { offset ->
+                        annotatedString.getStringAnnotations(tag = "URL", start = offset, end = offset)
+                            .firstOrNull()?.let { annotation ->
+                                uriHandler.openUri(annotation.item)
+                            }
+                    }
+                )
             }
         }
     }
@@ -195,7 +240,9 @@ fun ManualMarkdownText(text: String, modifier: Modifier = Modifier) {
 @Composable
 fun LoadingIndicator() {
     Row(
-        modifier = Modifier.padding(vertical = 16.dp).fillMaxWidth(),
+        modifier = Modifier
+            .padding(vertical = 16.dp)
+            .fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
     ) {
         CircularProgressIndicator(Modifier.size(20.dp), color = MaterialTheme.colorScheme.primary, strokeWidth = 2.dp)
