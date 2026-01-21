@@ -1,5 +1,6 @@
 package com.ventarys.ai
 
+import android.app.Application
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -18,7 +19,9 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -34,21 +37,26 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
-import androidx.lifecycle.ViewModel
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import com.ventarys.ai.R
+import com.ventarys.ai.ui.screens.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -57,7 +65,9 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.io.IOException
+import java.util.Date
 import java.util.concurrent.TimeUnit
 
 // --- NAVIGATION --- //
@@ -137,43 +147,117 @@ fun VentarysChatTheme(themeOption: ThemeOption, content: @Composable () -> Unit)
 // --- DATA & VIEWMODEL --- //
 data class Message(val text: String, val isFromUser: Boolean)
 data class APIMessage(val role: String, val content: String)
+data class ChatHistory(val id: String, val title: String, val messages: MutableList<Message>)
 
 val SYSTEM_MESSAGE = APIMessage(
     role = "system",
     content = "Eres Ventarys AI. Responde de forma útil, precisa y concisa. Usa Markdown solo para negritas (**texto**) y listas (* elemento)."
 )
 
-class ChatViewModel : ViewModel() {
+class ChatViewModel(application: Application) : AndroidViewModel(application) {
+    private val gson = Gson()
+    private val historyFile = File(application.filesDir, "chat_history.json")
+
+    private val _chatHistories = MutableStateFlow<List<ChatHistory>>(emptyList())
+    val chatHistories: StateFlow<List<ChatHistory>> = _chatHistories.asStateFlow()
+
     private val _messages = MutableStateFlow<List<Message>>(emptyList())
     val messages: StateFlow<List<Message>> = _messages.asStateFlow()
+
+    private var currentChatId: String? = null
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val client = OkHttpClient.Builder()
-        .callTimeout(0, TimeUnit.SECONDS) // Indefinite timeout
+        .callTimeout(10, TimeUnit.MINUTES)
         .build()
+
+    init {
+        loadChatHistory()
+    }
+
+    fun startNewChat() {
+        currentChatId = null
+        _messages.value = emptyList()
+    }
+
+    fun loadChat(chatId: String) {
+        val chat = _chatHistories.value.find { it.id == chatId }
+        if (chat != null) {
+            currentChatId = chat.id
+            _messages.value = chat.messages.toList()
+        }
+    }
+
+    fun deleteChat(chatId: String) {
+        _chatHistories.update { it.filterNot { chat -> chat.id == chatId } }
+        saveChatHistory()
+        if (currentChatId == chatId) {
+            startNewChat()
+        }
+    }
 
     fun sendMessage(userInput: String) {
         viewModelScope.launch {
+            if (currentChatId == null) {
+                currentChatId = Date().time.toString()
+                val newChat = ChatHistory(currentChatId!!, userInput, mutableListOf())
+                _chatHistories.value = _chatHistories.value + newChat
+            }
+
             val userMessage = Message(userInput, true)
-            _messages.value = _messages.value + userMessage
+            addMessageToCurrentChat(userMessage)
             _isLoading.value = true
 
             try {
-                val history = mutableListOf(SYSTEM_MESSAGE) + _messages.value.map { m -> APIMessage(if (m.isFromUser) "user" else "assistant", m.text) }
-                val responseText = generatePrivateText(history)
-                _messages.value = _messages.value + Message(responseText, false)
+                val apiHistory = mutableListOf(SYSTEM_MESSAGE) + _messages.value.map { m -> APIMessage(if (m.isFromUser) "user" else "assistant", m.text) }
+                val responseText = generatePrivateText(apiHistory)
+                addMessageToCurrentChat(Message(responseText, false))
             } catch (e: Exception) {
-                _messages.value = _messages.value + Message("Error: ${e.message}", false)
+                addMessageToCurrentChat(Message("Error: ${e.message}", false))
             } finally {
                 _isLoading.value = false
+                saveChatHistory()
             }
         }
     }
 
-    fun clearChatHistory() {
-        _messages.value = emptyList()
+    private fun addMessageToCurrentChat(message: Message) {
+        _messages.value = _messages.value + message
+        val chat = _chatHistories.value.find { it.id == currentChatId }
+        chat?.messages?.add(message)
+    }
+
+    private fun saveChatHistory() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val json = gson.toJson(_chatHistories.value)
+                historyFile.writeText(json)
+            } catch (e: IOException) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    private fun loadChatHistory() {
+        viewModelScope.launch(Dispatchers.IO) {
+            if (historyFile.exists()) {
+                try {
+                    val json = historyFile.readText()
+                    val type = object : TypeToken<List<ChatHistory>>() {}.type
+                    _chatHistories.value = gson.fromJson(json, type)
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+    }
+
+    fun deleteAllChats() {
+        _chatHistories.value = emptyList()
+        startNewChat()
+        saveChatHistory()
     }
 
     private suspend fun generatePrivateText(history: List<APIMessage>): String {
@@ -188,17 +272,10 @@ class ChatViewModel : ViewModel() {
 
                 val requestBody = json.toString().toRequestBody(mediaType)
 
-                val request = Request.Builder()
-                    .url("https://text.pollinations.ai/")
-                    .post(requestBody)
-                    .build()
-
+                val request = Request.Builder().url("https://text.pollinations.ai/").post(requestBody).build()
                 val response = client.newCall(request).execute()
-                if (!response.isSuccessful) {
-                    "API Error: ${response.code} ${response.message}"
-                } else {
-                    response.body?.string() ?: "No response from the API"
-                }
+
+                if (!response.isSuccessful) "API Error: ${response.code} ${response.message}" else response.body?.string() ?: "No response"
             } catch (e: IOException) {
                 e.message ?: "Unknown error"
             }
@@ -222,6 +299,10 @@ fun VentarysNavHost(navController: NavHostController, viewModel: ChatViewModel, 
                 onNavigate = { route ->
                     navController.navigate(route) { launchSingleTop = true }
                 },
+                onNewChat = {
+                    viewModel.startNewChat()
+                    navController.navigate(AppDestinations.CHAT_ROUTE) { launchSingleTop = true }
+                },
                 onClose = { scope.launch { drawerState.close() } }
             )
         }
@@ -231,14 +312,17 @@ fun VentarysNavHost(navController: NavHostController, viewModel: ChatViewModel, 
                 ChatScreen(viewModel = viewModel, onMenuClick = { scope.launch { drawerState.open() } })
             }
             composable(AppDestinations.HISTORY_ROUTE) {
-                HistoryScreen(onMenuClick = { scope.launch { drawerState.open() } })
+                HistoryScreen(viewModel = viewModel, onMenuClick = { scope.launch { drawerState.open() } }, onChatClicked = {
+                    viewModel.loadChat(it)
+                    navController.navigate(AppDestinations.CHAT_ROUTE)
+                })
             }
             composable(AppDestinations.SETTINGS_ROUTE) {
                 SettingsScreen(
-                    viewModel = viewModel,
                     onMenuClick = { scope.launch { drawerState.open() } },
                     themeOption = themeOptionState.value,
-                    onThemeChange = { themeOptionState.value = it }
+                    onThemeChange = { themeOptionState.value = it },
+                    onDeleteHistory = { viewModel.deleteAllChats() }
                 )
             }
             composable(AppDestinations.ABOUT_ROUTE) {
@@ -252,337 +336,48 @@ fun VentarysNavHost(navController: NavHostController, viewModel: ChatViewModel, 
 fun AppDrawer(
     currentRoute: String,
     onNavigate: (String) -> Unit,
+    onNewChat: () -> Unit,
     onClose: () -> Unit
 ) {
     ModalDrawerSheet {
         Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Image(
-                painter = painterResource(id = R.mipmap.ic_launcher_foreground),
-                contentDescription = "App Logo",
-                modifier = Modifier.size(40.dp)
-            )
-            Spacer(modifier = Modifier.width(12.dp))
+        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Image(painterResource(R.mipmap.ic_launcher_foreground), "App Logo", Modifier.size(40.dp))
+            Spacer(Modifier.width(12.dp))
             Text("Ventarys AI", style = MaterialTheme.typography.titleLarge)
         }
         Divider()
         NavigationDrawerItem(
-            icon = { Icon(Icons.Outlined.Forum, contentDescription = "Chat") },
+            icon = { Icon(Icons.Default.Add, "New Chat") },
+            label = { Text("Nuevo Chat") },
+            selected = false,
+            onClick = { onNewChat(); onClose() }
+        )
+        Divider(modifier = Modifier.padding(vertical = 8.dp))
+        NavigationDrawerItem(
+            icon = { Icon(Icons.Outlined.Forum, "Chat") },
             label = { Text("Chat") },
             selected = currentRoute == AppDestinations.CHAT_ROUTE,
             onClick = { onNavigate(AppDestinations.CHAT_ROUTE); onClose() }
         )
         NavigationDrawerItem(
-            icon = { Icon(Icons.Outlined.History, contentDescription = "History") },
+            icon = { Icon(Icons.Outlined.History, "History") },
             label = { Text("Historial") },
             selected = currentRoute == AppDestinations.HISTORY_ROUTE,
             onClick = { onNavigate(AppDestinations.HISTORY_ROUTE); onClose() }
         )
         NavigationDrawerItem(
-            icon = { Icon(Icons.Outlined.Settings, contentDescription = "Settings") },
+            icon = { Icon(Icons.Outlined.Settings, "Settings") },
             label = { Text("Ajustes") },
             selected = currentRoute == AppDestinations.SETTINGS_ROUTE,
             onClick = { onNavigate(AppDestinations.SETTINGS_ROUTE); onClose() }
         )
         Divider(modifier = Modifier.padding(vertical = 8.dp))
         NavigationDrawerItem(
-            icon = { Icon(Icons.Outlined.Info, contentDescription = "About") },
+            icon = { Icon(Icons.Outlined.Info, "About") },
             label = { Text("Acerca de") },
             selected = currentRoute == AppDestinations.ABOUT_ROUTE,
             onClick = { onNavigate(AppDestinations.ABOUT_ROUTE); onClose() }
         )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun GenericScreen(title: String, onMenuClick: () -> Unit, content: @Composable ColumnScope.() -> Unit) {
-    Scaffold(
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Image(painter = painterResource(id = R.mipmap.ic_launcher_foreground), contentDescription = "App Logo", modifier = Modifier.size(32.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(title)
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onMenuClick) {
-                        Icon(Icons.Default.Menu, "Sidebar Menu")
-                    }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.background)
-            )
-        }
-    ) { paddingValues ->
-        Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            content()
-        }
-    }
-}
-
-@Composable
-fun HistoryScreen(onMenuClick: () -> Unit) {
-    GenericScreen(title = "Historial", onMenuClick = onMenuClick) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("No hay chats guardados")
-        }
-    }
-}
-
-@Composable
-fun SettingsScreen(
-    viewModel: ChatViewModel,
-    onMenuClick: () -> Unit,
-    themeOption: ThemeOption,
-    onThemeChange: (ThemeOption) -> Unit
-) {
-    GenericScreen(title = "Ajustes", onMenuClick = onMenuClick) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text("Tema de la aplicación", style = MaterialTheme.typography.titleMedium)
-            Spacer(modifier = Modifier.height(8.dp))
-            Column(Modifier.selectableGroup()) {
-                ThemeOption.values().forEach { option ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .height(56.dp)
-                            .selectable(
-                                selected = (option == themeOption),
-                                onClick = { onThemeChange(option) },
-                                role = Role.RadioButton
-                            )
-                            .padding(horizontal = 16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        RadioButton(
-                            selected = (option == themeOption),
-                            onClick = null // null recommended for accessibility with screenreaders
-                        )
-                        Text(
-                            text = option.name,
-                            style = MaterialTheme.typography.bodyLarge,
-                            modifier = Modifier.padding(start = 16.dp)
-                        )
-                    }
-                }
-            }
-            Spacer(modifier = Modifier.height(16.dp))
-            Divider()
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = { viewModel.clearChatHistory() }, modifier = Modifier.fillMaxWidth()) {
-                Text("Borrar historial del chat actual")
-            }
-        }
-    }
-}
-
-@Composable
-fun AboutScreen(onMenuClick: () -> Unit) {
-    val context = LocalContext.current
-    GenericScreen(title = "Acerca de", onMenuClick = onMenuClick) {
-        Column(
-            modifier = Modifier.fillMaxSize().padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Image(
-                painter = painterResource(id = R.mipmap.ic_launcher_foreground),
-                contentDescription = "App Logo",
-                modifier = Modifier.size(120.dp)
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-            Text("Versión 1.0.0", style = MaterialTheme.typography.labelMedium)
-            Spacer(modifier = Modifier.height(16.dp))
-            Text("Creado por JNTX Studio", style = MaterialTheme.typography.titleLarge)
-            Spacer(modifier = Modifier.height(8.dp))
-            TextButton(onClick = {
-                val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Juanoto2012"))
-                context.startActivity(intent)
-            }) {
-                Text("GitHub: Juanoto2012")
-            }
-        }
-    }
-}
-
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ChatScreen(viewModel: ChatViewModel, onMenuClick: () -> Unit) {
-    val listState = rememberLazyListState()
-    val messages by viewModel.messages.collectAsState()
-    val isLoading by viewModel.isLoading.collectAsState()
-
-    LaunchedEffect(messages.size) {
-        if (messages.isNotEmpty()) {
-            listState.animateScrollToItem(messages.size)
-        }
-    }
-
-    Scaffold(
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Image(painter = painterResource(id = R.mipmap.ic_launcher_foreground), contentDescription = "App Logo", modifier = Modifier.size(32.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Ventarys AI")
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onMenuClick) {
-                        Icon(Icons.Default.Menu, "Sidebar Menu")
-                    }
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.background)
-            )
-        },
-        bottomBar = {
-            MessageInput(isProcessing = isLoading, onSend = { viewModel.sendMessage(it) })
-        }
-    ) { paddingValues ->
-        LazyColumn(
-            modifier = Modifier.fillMaxSize().padding(paddingValues).padding(horizontal = 16.dp),
-            state = listState
-        ) {
-            items(messages) { message ->
-                MessageBubble(message = message)
-            }
-            if (isLoading) {
-                item { LoadingIndicator() }
-            }
-        }
-    }
-}
-
-@Composable
-fun MessageInput(isProcessing: Boolean, onSend: (String) -> Unit) {
-    var text by remember { mutableStateOf("") }
-    Surface(color = MaterialTheme.colorScheme.background) {
-        Row(
-            modifier = Modifier.padding(16.dp).fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(24.dp),
-                color = MaterialTheme.colorScheme.background,
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextField(
-                        value = text,
-                        onValueChange = { text = it },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("Envía un mensaje a Ventarys...") },
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            disabledIndicatorColor = Color.Transparent
-                        )
-                    )
-                    IconButton(
-                        onClick = { onSend(text); text = "" },
-                        enabled = text.isNotBlank() && !isProcessing,
-                        colors = IconButtonDefaults.iconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.onBackground,
-                            contentColor = MaterialTheme.colorScheme.background,
-                            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-                            disabledContentColor = MaterialTheme.colorScheme.outline
-                        )
-                    ) {
-                        Icon(Icons.Default.ArrowUpward, contentDescription = "Send")
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun MessageBubble(message: Message) {
-    if (message.isFromUser) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp, horizontal = 8.dp),
-            horizontalArrangement = Arrangement.End
-        ) {
-            Card(
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
-            ) {
-                Text(message.text, modifier = Modifier.padding(16.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    } else {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-            verticalAlignment = Alignment.Top
-        ) {
-            Icon(
-                Icons.Outlined.StarOutline, "AI Icon",
-                modifier = Modifier.padding(end = 12.dp).size(24.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-            ManualMarkdownText(text = message.text, modifier = Modifier.weight(1f))
-        }
-    }
-}
-
-@Composable
-fun ManualMarkdownText(text: String, modifier: Modifier = Modifier) {
-    val boldRegex = """\*\*(.*?)\*\*""".toRegex()
-    val listPrefixRegex = """^\s*([*\-])\s+(.*)""".toRegex()
-
-    Column(modifier = modifier) {
-        text.lines().forEach { line ->
-            val listMatch = listPrefixRegex.find(line)
-            val isListItem = listMatch != null
-            val lineContent = listMatch?.groupValues?.get(2) ?: line
-
-            val annotatedString = buildAnnotatedString {
-                var lastIndex = 0
-                boldRegex.findAll(lineContent).forEach { matchResult ->
-                    val startIndex = matchResult.range.first
-                    if (startIndex > lastIndex) {
-                        append(lineContent.substring(lastIndex, startIndex))
-                    }
-                    withStyle(style = SpanStyle(fontWeight = FontWeight.Bold)) {
-                        append(matchResult.groupValues[1])
-                    }
-                    lastIndex = matchResult.range.last + 1
-                }
-                if (lastIndex < lineContent.length) {
-                    append(lineContent.substring(lastIndex))
-                }
-            }
-
-            if (isListItem) {
-                Row(Modifier.padding(bottom = 4.dp)) {
-                    Text("•", modifier = Modifier.padding(end = 8.dp))
-                    Text(annotatedString)
-                }
-            } else {
-                Text(annotatedString, modifier = Modifier.padding(bottom = 4.dp))
-            }
-        }
-    }
-}
-
-@Composable
-fun LoadingIndicator() {
-    Row(
-        modifier = Modifier.padding(vertical = 16.dp).fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        CircularProgressIndicator(Modifier.size(20.dp), color = MaterialTheme.colorScheme.primary, strokeWidth = 2.dp)
-        Spacer(Modifier.width(12.dp))
-        Text("Pensando...", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f))
     }
 }

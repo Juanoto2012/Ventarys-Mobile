@@ -2,4 +2,32 @@
 <resources>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <!-- Coffee and Peach color palette -->
+    <color name="coffee">#6F4E37</color>
+    <color name="coffee_light">#8B6F47</color>
+    <color name="coffee_dark">#4A3C28</color>
+
+    <color name="peach">#FFB88C</color>
+    <color name="peach_light">#FFD4B8</color>
+    <color name="peach_dark">#FF8C42</color>
+
+    <!-- Standard colors -->
+    <color name="red_500">#F44336</color>
+
+    <!-- Derived Material3 colors -->
+    <color name="primary">@color/coffee</color>
+    <color name="primary_light">@color/coffee_light</color>
+    <color name="primary_dark">@color/coffee_dark</color>
+
+    <color name="secondary">@color/peach</color>
+    <color name="secondary_light">@color/peach_light</color>
+    <color name="secondary_dark">@color/peach_dark</color>
+
+    <color name="surface">#FFFFFF</color>
+    <color name="background">#F5F5F5</color>
+    <color name="on_primary">#FFFFFF</color>
+    <color name="on_secondary">#000000</color>
+    <color name="on_surface">#000000</color>
+    <color name="on_background">#000000</color>
 </resources>
