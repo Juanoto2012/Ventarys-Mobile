@@ -15,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
@@ -26,6 +27,35 @@ import androidx.compose.ui.unit.dp
 import com.ventarys.ai.ChatViewModel
 import com.ventarys.ai.Message
 import com.ventarys.ai.R
+
+// --- THEME --- //
+private val MonetLightColorScheme = lightColorScheme(
+    primary = Color(0xFF8C7B2E),
+    onPrimary = Color.White,
+    secondary = Color(0xFF6A8EAF),
+    onSecondary = Color.White,
+    background = Color(0xFFFCF9E8),
+    onBackground = Color(0xFF4A473A),
+    surface = Color(0xFFFCF9E8),
+    onSurface = Color(0xFF4A473A),
+    surfaceVariant = Color(0xFFE8E4D3),
+    onSurfaceVariant = Color(0xFF4A473A),
+    outline = Color(0xFFD1CBB8)
+)
+
+private val MonetDarkColorScheme = darkColorScheme(
+    primary = Color(0xFF8C7B2E),
+    onPrimary = Color.White,
+    secondary = Color(0xFFA0B8D0),
+    onSecondary = Color(0xFF202C39),
+    background = Color(0xFF2A2820),
+    onBackground = Color(0xFFE8E4D3),
+    surface = Color(0xFF2A2820),
+    onSurface = Color(0xFFE8E4D3),
+    surfaceVariant = Color(0xFF4A473A),
+    onSurfaceVariant = Color(0xFFE8E4D3),
+    outline = Color(0xFF6F6A5B)
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,7 +85,9 @@ fun ChatScreen(viewModel: ChatViewModel, onMenuClick: () -> Unit) {
                         Icon(Icons.Default.Menu, "Sidebar Menu")
                     }
                 },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.background)
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
             )
         },
         bottomBar = {
@@ -115,12 +147,23 @@ fun MessageInput(isProcessing: Boolean, onSend: (String) -> Unit) {
                         onValueChange = { text = it },
                         modifier = Modifier.weight(1f),
                         placeholder = { Text("Envía un mensaje a Ventarys...") },
-                        colors = TextFieldDefaults.colors(focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent, unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent, focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent, unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent, disabledIndicatorColor = androidx.compose.ui.graphics.Color.Transparent)
+                        colors = TextFieldDefaults.colors(
+                            focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                            unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                            focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                            unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                            disabledIndicatorColor = androidx.compose.ui.graphics.Color.Transparent
+                        )
                     )
                     IconButton(
                         onClick = { onSend(text); text = "" },
                         enabled = text.isNotBlank() && !isProcessing,
-                        colors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.onBackground, contentColor = MaterialTheme.colorScheme.background, disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant, disabledContentColor = MaterialTheme.colorScheme.outline)
+                        colors = IconButtonDefaults.iconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.onBackground,
+                            contentColor = MaterialTheme.colorScheme.background,
+                            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant,
+                            disabledContentColor = MaterialTheme.colorScheme.outline
+                        )
                     ) {
                         Icon(Icons.Default.ArrowUpward, "Send")
                     }

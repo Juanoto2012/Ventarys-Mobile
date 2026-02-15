@@ -99,36 +99,32 @@ class MainActivity : ComponentActivity() {
 }
 
 // --- THEME --- //
-private val CoffeePeachLightColorScheme = lightColorScheme(
-    primary = Color(0xFF8D6E63), // Coffee Brown
+val MonetLightColorScheme = lightColorScheme(
+    primary = Color(0xFF8C7B2E),
     onPrimary = Color.White,
-    secondary = Color(0xFFF5A623), // Peachy-orange
+    secondary = Color(0xFF6A8EAF),
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFFFE0B2), // Light orange/peach
-    onSecondaryContainer = Color(0xFF4E342E), // Dark Coffee
-    background = Color(0xFFFBE9E7), // Light Peach
-    onBackground = Color(0xFF4E342E), // Dark Coffee
-    surface = Color(0xFFFBE9E7),
-    onSurface = Color(0xFF4E342E),
-    surfaceVariant = Color(0xFFD7CCC8), // User bubble bg (Light Brown)
-    onSurfaceVariant = Color(0xFF4E342E), // User bubble text
-    outline = Color(0xFFBCAAA4)
+    background = Color(0xFFFCF9E8),
+    onBackground = Color(0xFF4A473A),
+    surface = Color(0xFFFCF9E8),
+    onSurface = Color(0xFF4A473A),
+    surfaceVariant = Color(0xFFE8E4D3),
+    onSurfaceVariant = Color(0xFF4A473A),
+    outline = Color(0xFFD1CBB8)
 )
 
-private val CoffeePeachDarkColorScheme = darkColorScheme(
-    primary = Color(0xFFFFB74D), // Peach accent
-    onPrimary = Color(0xFF4E342E),
-    secondary = Color(0xFFBCAAA4), // Lighter coffee
-    onSecondary = Color(0xFF4E342E),
-    secondaryContainer = Color(0xFF5D4037), // Medium Brown (same as user bubble)
-    onSecondaryContainer = Color(0xFFFFF3E0), // Cream
-    background = Color(0xFF3E2723), // Dark Coffee
-    onBackground = Color(0xFFFFF3E0), // Cream
-    surface = Color(0xFF3E2723),
-    onSurface = Color(0xFFFFF3E0),
-    surfaceVariant = Color(0xFF5D4037), // User bubble bg (Medium Brown)
-    onSurfaceVariant = Color(0xFFFFF3E0), // User bubble text
-    outline = Color(0xFF795548)
+val MonetDarkColorScheme = darkColorScheme(
+    primary = Color(0xFF8C7B2E),
+    onPrimary = Color.White,
+    secondary = Color(0xFFA0B8D0),
+    onSecondary = Color(0xFF202C39),
+    background = Color(0xFF2A2820),
+    onBackground = Color(0xFFE8E4D3),
+    surface = Color(0xFF2A2820),
+    onSurface = Color(0xFFE8E4D3),
+    surfaceVariant = Color(0xFF4A473A),
+    onSurfaceVariant = Color(0xFFE8E4D3),
+    outline = Color(0xFF6F6A5B)
 )
 
 @Composable
@@ -138,7 +134,7 @@ fun VentarysChatTheme(themeOption: ThemeOption, content: @Composable () -> Unit)
         ThemeOption.Light -> false
         ThemeOption.Dark -> true
     }
-    val colorScheme = if (useDarkTheme) CoffeePeachDarkColorScheme else CoffeePeachLightColorScheme
+    val colorScheme = if (useDarkTheme) MonetDarkColorScheme else MonetLightColorScheme
 
     val view = LocalView.current
     if (!view.isInEditMode) {
@@ -178,7 +174,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val isLoading: StateFlow<Boolean> = _isLoading.asStateFlow()
 
     private val client = OkHttpClient.Builder()
-        .callTimeout(60, TimeUnit.MINUTES)
+        .callTimeout(120, TimeUnit.SECONDS)
         .build()
 
     init {
@@ -275,16 +271,37 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 val messagesJson = JSONArray(history.map { JSONObject().put("role", it.role).put("content", it.content) })
                 val json = JSONObject()
                     .put("messages", messagesJson)
-                    .put("model", "gpt-oss-20b")
-                    .put("private", true)
+                    .put("model", "codestral-latest")
+                    .put("stream", false)
 
                 val requestBody = json.toString().toRequestBody(mediaType)
 
-                val request = Request.Builder().url("https://text.pollinations.ai/").post(requestBody).build()
+                val request = Request.Builder()
+                    .url("https://api.llm7.io/v1/chat/completions")
+                    .post(requestBody)
+                    .build()
+
                 val response = client.newCall(request).execute()
 
-                if (!response.isSuccessful) "API Error: ${response.code} ${response.message}" else response.body?.string() ?: "No response"
-            } catch (e: IOException) {
+                if (!response.isSuccessful) {
+                    "API Error: ${response.code} ${response.message}"
+                } else {
+                    val responseBody = response.body?.string()
+                    if (responseBody != null) {
+                        val jsonResponse = JSONObject(responseBody)
+                        val choices = jsonResponse.getJSONArray("choices")
+                        if (choices.length() > 0) {
+                            val firstChoice = choices.getJSONObject(0)
+                            val message = firstChoice.getJSONObject("message")
+                            message.getString("content")
+                        } else {
+                            "No response choice found"
+                        }
+                    } else {
+                        "No response body"
+                    }
+                }
+            } catch (e: Exception) {
                 e.message ?: "Unknown error"
             }
         }
@@ -347,45 +364,79 @@ fun AppDrawer(
     onNewChat: () -> Unit,
     onClose: () -> Unit
 ) {
-    ModalDrawerSheet {
+    ModalDrawerSheet(
+        drawerContainerColor = MaterialTheme.colorScheme.surface
+    ) {
         Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Image(painterResource(R.mipmap.ic_launcher_foreground), "App Logo", Modifier.size(40.dp))
             Spacer(Modifier.width(12.dp))
-            Text("Ventarys AI", style = MaterialTheme.typography.titleLarge)
+            Text("Ventarys AI", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onSurface)
         }
-        Divider()
+        Divider(color = MaterialTheme.colorScheme.outline)
         NavigationDrawerItem(
             icon = { Icon(Icons.Default.Add, "New Chat") },
             label = { Text("Nuevo Chat") },
             selected = false,
-            onClick = { onNewChat(); onClose() }
+            onClick = { onNewChat(); onClose() },
+            colors = NavigationDrawerItemDefaults.colors(
+                unselectedTextColor = MaterialTheme.colorScheme.onSurface,
+                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         )
-        Divider(modifier = Modifier.padding(vertical = 8.dp))
+        Divider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outline)
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.Forum, "Chat") },
             label = { Text("Chat") },
             selected = currentRoute == AppDestinations.CHAT_ROUTE,
-            onClick = { onNavigate(AppDestinations.CHAT_ROUTE); onClose() }
+            onClick = { onNavigate(AppDestinations.CHAT_ROUTE); onClose() },
+            colors = NavigationDrawerItemDefaults.colors(
+                selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                selectedIconColor = MaterialTheme.colorScheme.primary,
+                unselectedTextColor = MaterialTheme.colorScheme.onSurface,
+                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         )
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.History, "History") },
             label = { Text("Historial") },
             selected = currentRoute == AppDestinations.HISTORY_ROUTE,
-            onClick = { onNavigate(AppDestinations.HISTORY_ROUTE); onClose() }
+            onClick = { onNavigate(AppDestinations.HISTORY_ROUTE); onClose() },
+            colors = NavigationDrawerItemDefaults.colors(
+                selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                selectedIconColor = MaterialTheme.colorScheme.primary,
+                unselectedTextColor = MaterialTheme.colorScheme.onSurface,
+                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         )
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.Settings, "Settings") },
             label = { Text("Ajustes") },
             selected = currentRoute == AppDestinations.SETTINGS_ROUTE,
-            onClick = { onNavigate(AppDestinations.SETTINGS_ROUTE); onClose() }
+            onClick = { onNavigate(AppDestinations.SETTINGS_ROUTE); onClose() },
+            colors = NavigationDrawerItemDefaults.colors(
+                selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                selectedIconColor = MaterialTheme.colorScheme.primary,
+                unselectedTextColor = MaterialTheme.colorScheme.onSurface,
+                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         )
-        Divider(modifier = Modifier.padding(vertical = 8.dp))
+        Divider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outline)
         NavigationDrawerItem(
             icon = { Icon(Icons.Outlined.Info, "About") },
             label = { Text("Acerca de") },
             selected = currentRoute == AppDestinations.ABOUT_ROUTE,
-            onClick = { onNavigate(AppDestinations.ABOUT_ROUTE); onClose() }
+            onClick = { onNavigate(AppDestinations.ABOUT_ROUTE); onClose() },
+            colors = NavigationDrawerItemDefaults.colors(
+                selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                selectedIconColor = MaterialTheme.colorScheme.primary,
+                unselectedTextColor = MaterialTheme.colorScheme.onSurface,
+                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         )
     }
 }

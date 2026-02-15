@@ -13,6 +13,35 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
+// --- THEME --- //
+private val MonetLightColorScheme = lightColorScheme(
+    primary = Color(0xFF8C7B2E),
+    onPrimary = Color.White,
+    secondary = Color(0xFF6A8EAF),
+    onSecondary = Color.White,
+    background = Color(0xFFFCF9E8),
+    onBackground = Color(0xFF4A473A),
+    surface = Color(0xFFFCF9E8),
+    onSurface = Color(0xFF4A473A),
+    surfaceVariant = Color(0xFFE8E4D3),
+    onSurfaceVariant = Color(0xFF4A473A),
+    outline = Color(0xFFD1CBB8)
+)
+
+private val MonetDarkColorScheme = darkColorScheme(
+    primary = Color(0xFF8C7B2E),
+    onPrimary = Color.White,
+    secondary = Color(0xFFA0B8D0),
+    onSecondary = Color(0xFF202C39),
+    background = Color(0xFF2A2820),
+    onBackground = Color(0xFFE8E4D3),
+    surface = Color(0xFF2A2820),
+    onSurface = Color(0xFFE8E4D3),
+    surfaceVariant = Color(0xFF4A473A),
+    onSurfaceVariant = Color(0xFFE8E4D3),
+    outline = Color(0xFF6F6A5B)
+)
+
 @Composable
 fun GenericScreen(
     title: String,
@@ -22,7 +51,7 @@ fun GenericScreen(
     Column(
         modifier = Modifier.fillMaxSize()
     ) {
-        // Top app bar with Coffee/Peach theme
+        // Top app bar with Monet theme
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -52,7 +81,7 @@ fun GenericScreen(
         }
         
         Divider(
-            color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f)
+            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
         )
         
         // Content with padding
