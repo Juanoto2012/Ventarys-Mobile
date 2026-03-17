@@ -8,6 +8,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GenericScreen(
