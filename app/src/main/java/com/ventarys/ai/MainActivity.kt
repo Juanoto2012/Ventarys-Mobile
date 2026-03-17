@@ -1,6 +1,7 @@
 package com.ventarys.ai
 
 import android.app.Application
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -46,7 +47,6 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
-import java.io.IOException
 import java.util.Date
 import java.util.concurrent.TimeUnit
 
@@ -144,7 +144,7 @@ fun VentarysChatTheme(themeOption: ThemeOption, content: @Composable () -> Unit)
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val gson = Gson()
     private val historyFile = File(application.filesDir, "chat_history.json")
-    private val settingsFile = File(application.filesDir, "settings_v2.json")
+    private val settingsFile = File(application.filesDir, "settings_v3.json")
 
     private val _chatHistories = MutableStateFlow<List<ChatHistory>>(emptyList())
     val chatHistories: StateFlow<List<ChatHistory>> = _chatHistories.asStateFlow()
@@ -161,8 +161,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _apiKeys = MutableStateFlow<Map<String, String>>(emptyMap())
     val apiKeys: StateFlow<Map<String, String>> = _apiKeys.asStateFlow()
 
-    private val _selectedModels = MutableStateFlow<Map<String, String>>(
-        AIProvider.values().associate { it.name to it.defaultModels.first() }
+    private val _selectedModels = MutableStateFlow(
+        AIProvider.entries.associate { it.name to it.defaultModels.first() }
     )
     val selectedModels: StateFlow<Map<String, String>> = _selectedModels.asStateFlow()
 
@@ -178,8 +178,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     init {
         loadChatHistory()
         loadSettings()
-        // Fetch models for all providers that have keys
-        AIProvider.values().forEach { fetchModels(it) }
+        AIProvider.entries.forEach { fetchModels(it) }
     }
 
     fun setProvider(provider: AIProvider) {
@@ -223,7 +222,6 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         val modelList = mutableListOf<String>()
                         for (i in 0 until data.length()) {
                             val id = data.getJSONObject(i).getString("id")
-                            // Filter for free models if OpenRouter
                             if (provider == AIProvider.OPEN_ROUTER) {
                                 if (id.endsWith(":free")) modelList.add(id)
                             } else {
@@ -233,7 +231,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         modelList.sorted()
                     } else null
                 }
-                if (fetched != null && fetched.isNotEmpty()) {
+                if (!fetched.isNullOrEmpty()) {
                     _dynamicModels.update { it + (provider.name to fetched) }
                 }
             } catch (e: Exception) {
@@ -263,12 +261,18 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         if (currentChatId == chatId) startNewChat()
     }
 
-    fun sendMessage(userInput: String) {
+    fun sendMessage(userInput: String, attachedFiles: List<Uri> = emptyList()) {
         viewModelScope.launch {
             if (currentChatId == null) {
                 currentChatId = Date().time.toString()
-                val newChat = ChatHistory(currentChatId!!, userInput, mutableListOf())
-                _chatHistories.value = _chatHistories.value + newChat
+                val newChat = ChatHistory(currentChatId!!, userInput.ifBlank { "Archivo adjunto" }, mutableListOf())
+                _chatHistories.value += newChat
+            }
+
+            var finalInput = userInput
+            if (attachedFiles.isNotEmpty()) {
+                val filesContent = extractFilesContent(attachedFiles)
+                finalInput += "\n\n[Contenido de archivos adjuntos]:\n$filesContent"
             }
 
             val userMessage = Message(userInput, true)
@@ -276,7 +280,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             _isLoading.value = true
 
             try {
-                val apiHistory = mutableListOf(SYSTEM_MESSAGE) + _messages.value.map { m -> APIMessage(if (m.isFromUser) "user" else "assistant", m.text) }
+                val apiHistory = mutableListOf(SYSTEM_MESSAGE) + _messages.value.dropLast(1).map { m -> APIMessage(if (m.isFromUser) "user" else "assistant", m.text) } + APIMessage("user", finalInput)
                 val responseText = generateText(apiHistory)
                 addMessageToCurrentChat(Message(responseText, false))
             } catch (e: Exception) {
@@ -288,8 +292,28 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private suspend fun extractFilesContent(uris: List<Uri>): String {
+        return withContext(Dispatchers.IO) {
+            uris.joinToString("\n\n---\n\n") { uri ->
+                val fileName = uri.path?.substringAfterLast('/') ?: "Archivo"
+                val text = extractTextFromUri(uri)
+                "Archivo: $fileName\nContenido:\n$text"
+            }
+        }
+    }
+
+    private fun extractTextFromUri(uri: Uri): String {
+        return try {
+            getApplication<Application>().contentResolver.openInputStream(uri)?.use { 
+                it.bufferedReader().readText() 
+            } ?: "[No se pudo leer el archivo]"
+        } catch (e: Exception) {
+            "[Error leyendo archivo: ${e.message}]"
+        }
+    }
+
     private fun addMessageToCurrentChat(message: Message) {
-        _messages.value = _messages.value + message
+        _messages.value += message
         val chat = _chatHistories.value.find { it.id == currentChatId }
         chat?.messages?.add(message)
     }
@@ -332,11 +356,15 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                     val settings: Map<String, Any> = gson.fromJson(settingsFile.readText(), type)
                     
                     (settings["provider"] as? String)?.let { name ->
-                        _currentProvider.value = try { AIProvider.valueOf(name) } catch (e: Exception) { AIProvider.VENTARYS }
+                        _currentProvider.value = try { AIProvider.valueOf(name) } catch (ignore: Exception) { AIProvider.VENTARYS }
                     }
+                    
+                    @Suppress("UNCHECKED_CAST")
                     (settings["apiKeys"] as? Map<String, String>)?.let { keys ->
                         _apiKeys.value = keys
                     }
+                    
+                    @Suppress("UNCHECKED_CAST")
                     (settings["selectedModels"] as? Map<String, String>)?.let { models ->
                         _selectedModels.value = models
                     }
@@ -446,18 +474,18 @@ fun AppDrawer(currentRoute: String, onNavigate: (String) -> Unit, onNewChat: () 
             Spacer(Modifier.width(12.dp))
             Text("Ventarys AI", style = MaterialTheme.typography.titleLarge)
         }
-        Divider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
         NavigationDrawerItem(
             icon = { Icon(Icons.Default.Add, null) },
             label = { Text("Nuevo Chat") },
             selected = false,
             onClick = { onNewChat(); onClose() }
         )
-        Divider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
         DrawerItem(Icons.Outlined.Forum, "Chat", currentRoute == AppDestinations.CHAT_ROUTE) { onNavigate(AppDestinations.CHAT_ROUTE); onClose() }
         DrawerItem(Icons.Outlined.History, "Historial", currentRoute == AppDestinations.HISTORY_ROUTE) { onNavigate(AppDestinations.HISTORY_ROUTE); onClose() }
         DrawerItem(Icons.Outlined.Settings, "Ajustes", currentRoute == AppDestinations.SETTINGS_ROUTE) { onNavigate(AppDestinations.SETTINGS_ROUTE); onClose() }
-        Divider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
+        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
         DrawerItem(Icons.Outlined.Info, "Acerca de", currentRoute == AppDestinations.ABOUT_ROUTE) { onNavigate(AppDestinations.ABOUT_ROUTE); onClose() }
     }
 }

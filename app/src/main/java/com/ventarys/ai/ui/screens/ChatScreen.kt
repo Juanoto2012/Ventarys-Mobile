@@ -1,19 +1,22 @@
 package com.ventarys.ai.ui.screens
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,11 +25,13 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -74,21 +79,35 @@ fun ChatScreen(viewModel: ChatViewModel, onMenuClick: () -> Unit) {
             )
         },
         bottomBar = {
-            MessageInput(isProcessing = isLoading, onSend = { text -> viewModel.sendMessage(text) })
+            MessageInput(
+                isProcessing = isLoading, 
+                onSend = { text, files -> viewModel.sendMessage(text, files) }
+            )
         }
     ) { paddingValues ->
-        Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
-            if (messages.isEmpty()) {
-                WelcomeScreen()
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    state = listState,
-                    contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp)
-                ) {
-                    items(messages) { message -> MessageBubble(message = message) }
-                    if (isLoading) {
-                        item { LoadingIndicator() }
+        Box(
+            modifier = Modifier
+                .padding(paddingValues)
+                .fillMaxSize(),
+            contentAlignment = Alignment.TopCenter
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .widthIn(max = 850.dp)
+            ) {
+                if (messages.isEmpty()) {
+                    WelcomeScreen()
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        state = listState,
+                        contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp)
+                    ) {
+                        items(messages) { message -> MessageBubble(message = message) }
+                        if (isLoading) {
+                            item { LoadingIndicator() }
+                        }
                     }
                 }
             }
@@ -120,80 +139,164 @@ fun WelcomeScreen() {
 }
 
 @Composable
-fun MessageInput(isProcessing: Boolean, onSend: (String) -> Unit) {
+fun MessageInput(isProcessing: Boolean, onSend: (String, List<Uri>) -> Unit) {
     var text by remember { mutableStateOf("") }
-    Surface(
-        color = MaterialTheme.colorScheme.background,
+    var selectedFiles by remember { mutableStateOf<List<Uri>>(emptyList()) }
+    
+    val launcher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetMultipleContents()
+    ) { uris ->
+        selectedFiles = selectedFiles + uris
+    }
+    
+    Column(
         modifier = Modifier
+            .background(MaterialTheme.colorScheme.background)
             .navigationBarsPadding()
             .imePadding()
+            .fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column {
-            HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
-            Row(
-                modifier = Modifier
-                    .padding(horizontal = 8.dp, vertical = 12.dp)
-                    .fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+        Surface(
+            modifier = Modifier
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .widthIn(max = 800.dp)
+                .fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
             ) {
-                IconButton(
-                    onClick = { /* Add functionality */ },
-                    modifier = Modifier.size(40.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Add,
-                        contentDescription = "Attachments",
-                        tint = MaterialTheme.colorScheme.secondary
-                    )
+                AnimatedVisibility(visible = selectedFiles.isNotEmpty()) {
+                    LazyRow(
+                        modifier = Modifier.padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(selectedFiles) { uri ->
+                            FilePreviewItem(uri = uri) {
+                                selectedFiles = selectedFiles.filter { it != uri }
+                            }
+                        }
+                    }
                 }
-                
+
                 TextField(
                     value = text,
                     onValueChange = { text = it },
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(horizontal = 4.dp),
-                    placeholder = { 
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = {
                         Text(
-                            "Mensaje", 
-                            color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f),
+                            "Envía un mensaje a Ventarys...",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
                             fontSize = 16.sp
-                        ) 
+                        )
                     },
                     colors = TextFieldDefaults.colors(
-                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
                         focusedIndicatorColor = Color.Transparent,
                         unfocusedIndicatorColor = Color.Transparent,
-                        disabledIndicatorColor = Color.Transparent
+                        disabledIndicatorColor = Color.Transparent,
+                        cursorColor = MaterialTheme.colorScheme.primary
                     ),
-                    shape = RoundedCornerShape(24.dp),
-                    maxLines = 5
+                    maxLines = 6
                 )
                 
-                Spacer(Modifier.width(8.dp))
+                Spacer(Modifier.height(4.dp))
                 
-                IconButton(
-                    onClick = { if (text.isNotBlank()) { onSend(text); text = "" } },
-                    enabled = text.isNotBlank() && !isProcessing,
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (text.isNotBlank() && !isProcessing) MaterialTheme.colorScheme.primary 
-                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
-                        ),
-                    colors = IconButtonDefaults.iconButtonColors(
-                        contentColor = MaterialTheme.colorScheme.onPrimary,
-                        disabledContentColor = MaterialTheme.colorScheme.background
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Icon(
-                        Icons.Default.ArrowUpward, 
-                        contentDescription = "Send",
-                        modifier = Modifier.size(20.dp)
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { launcher.launch("*/*") }, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                Icons.Default.AttachFile,
+                                contentDescription = "Attach",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        IconButton(onClick = { /* More options */ }, modifier = Modifier.size(36.dp)) {
+                            Icon(
+                                Icons.Default.Add,
+                                contentDescription = "More",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "ENTER para enviar",
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                        )
+                    }
+                    
+                    IconButton(
+                        onClick = { 
+                            if ((text.isNotBlank() || selectedFiles.isNotEmpty()) && !isProcessing) { 
+                                onSend(text, selectedFiles)
+                                text = ""
+                                selectedFiles = emptyList()
+                            } 
+                        },
+                        enabled = (text.isNotBlank() || selectedFiles.isNotEmpty()) && !isProcessing,
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if ((text.isNotBlank() || selectedFiles.isNotEmpty()) && !isProcessing) MaterialTheme.colorScheme.onBackground
+                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f)
+                            )
+                    ) {
+                        Icon(
+                            Icons.Default.ArrowUpward,
+                            contentDescription = "Send",
+                            tint = if ((text.isNotBlank() || selectedFiles.isNotEmpty()) && !isProcessing) MaterialTheme.colorScheme.background
+                                   else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                 }
+            }
+        }
+        
+        Text(
+            text = "Ventarys AI puede cometer errores. Verifica la información importante.",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            textAlign = TextAlign.Center,
+            modifier = Modifier
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 8.dp)
+        )
+    }
+}
+
+@Composable
+fun FilePreviewItem(uri: Uri, onRemove: () -> Unit) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier.size(height = 40.dp, width = 120.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.Description, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(4.dp))
+            Text(
+                text = "Archivo",
+                style = MaterialTheme.typography.bodySmall,
+                maxLines = 1,
+                modifier = Modifier.weight(1f)
+            )
+            IconButton(onClick = onRemove, modifier = Modifier.size(24.dp)) {
+                Icon(Icons.Default.Close, null, Modifier.size(14.dp))
             }
         }
     }
@@ -201,22 +304,24 @@ fun MessageInput(isProcessing: Boolean, onSend: (String) -> Unit) {
 
 @Composable
 fun MessageBubble(message: Message) {
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        contentAlignment = if (message.isFromUser) Alignment.CenterEnd else Alignment.CenterStart
     ) {
-        Row(verticalAlignment = Alignment.Top) {
+        Row(
+            modifier = Modifier.widthIn(max = 650.dp),
+            verticalAlignment = Alignment.Top
+        ) {
             if (!message.isFromUser) {
                 Image(
                     painter = painterResource(R.mipmap.ic_launcher_foreground),
                     contentDescription = "AI",
-                    modifier = Modifier.size(32.dp),
+                    modifier = Modifier.size(32.dp).padding(top = 4.dp),
                     colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onBackground)
                 )
                 Spacer(Modifier.width(12.dp))
-            } else {
-                Spacer(Modifier.weight(1f))
             }
 
             if (message.isFromUser) {
