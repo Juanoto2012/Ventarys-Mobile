@@ -16,35 +16,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ventarys.ai.ChatViewModel
 
-// --- THEME --- //
-private val MonetLightColorScheme = lightColorScheme(
-    primary = Color(0xFF8C7B2E),
-    onPrimary = Color.White,
-    secondary = Color(0xFF6A8EAF),
-    onSecondary = Color.White,
-    background = Color(0xFFFCF9E8),
-    onBackground = Color(0xFF4A473A),
-    surface = Color(0xFFFCF9E8),
-    onSurface = Color(0xFF4A473A),
-    surfaceVariant = Color(0xFFE8E4D3),
-    onSurfaceVariant = Color(0xFF4A473A),
-    outline = Color(0xFFD1CBB8)
-)
-
-private val MonetDarkColorScheme = darkColorScheme(
-    primary = Color(0xFF8C7B2E),
-    onPrimary = Color.White,
-    secondary = Color(0xFFA0B8D0),
-    onSecondary = Color(0xFF202C39),
-    background = Color(0xFF2A2820),
-    onBackground = Color(0xFFE8E4D3),
-    surface = Color(0xFF2A2820),
-    onSurface = Color(0xFFE8E4D3),
-    surfaceVariant = Color(0xFF4A473A),
-    onSurfaceVariant = Color(0xFFE8E4D3),
-    outline = Color(0xFF6F6A5B)
-)
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HistoryScreen(viewModel: ChatViewModel, onMenuClick: () -> Unit, onChatClicked: (String) -> Unit) {
@@ -53,44 +24,73 @@ fun HistoryScreen(viewModel: ChatViewModel, onMenuClick: () -> Unit, onChatClick
     GenericScreen(title = "Historial", onMenuClick = onMenuClick) {
         if (chatHistory.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { 
-                Text("No hay chats guardados", color = MaterialTheme.colorScheme.onBackground) 
+                Text(
+                    "No hay chats guardados", 
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                ) 
             }
         } else {
             LazyColumn(modifier = Modifier.fillMaxSize()) {
-                items(chatHistory, key = { it.id }) {
+                items(chatHistory, key = { it.id }) { chat ->
                     val dismissState = rememberSwipeToDismissBoxState(confirmValueChange = { direction ->
                         if (direction == SwipeToDismissBoxValue.EndToStart) {
-                            viewModel.deleteChat(it.id)
+                            viewModel.deleteChat(chat.id)
                             true
                         } else false
                     })
 
                     SwipeToDismissBox(
                         state = dismissState,
+                        enableDismissFromStartToEnd = false,
                         backgroundContent = {
                             val color = when(dismissState.targetValue) {
-                                SwipeToDismissBoxValue.EndToStart -> Color.Red.copy(alpha = 0.8f)
+                                SwipeToDismissBoxValue.EndToStart -> MaterialTheme.colorScheme.errorContainer
                                 else -> Color.Transparent
                             }
                             Box(
                                 Modifier.fillMaxSize().background(color).padding(horizontal = 20.dp),
                                 contentAlignment = Alignment.CenterEnd
                             ) {
-                                Icon(Icons.Default.Delete, "Delete", tint = Color.White)
+                                Icon(
+                                    Icons.Default.Delete, 
+                                    "Borrar", 
+                                    tint = if (color != Color.Transparent) MaterialTheme.colorScheme.onErrorContainer else Color.Transparent
+                                )
                             }
                         }
                     ) {
-                        ListItem(
-                            headlineContent = { 
-                                Text(it.title, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurface) 
-                            },
-                            supportingContent = { 
-                                Text("${it.messages.size} mensajes", maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant) 
-                            },
-                            modifier = Modifier.selectable(selected = false, onClick = { onChatClicked(it.id) })
-                        )
+                        Surface(
+                            color = MaterialTheme.colorScheme.background,
+                            modifier = Modifier.selectable(selected = false, onClick = { onChatClicked(chat.id) })
+                        ) {
+                            Column {
+                                ListItem(
+                                    headlineContent = { 
+                                        Text(
+                                            chat.title, 
+                                            maxLines = 1, 
+                                            overflow = TextOverflow.Ellipsis, 
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        ) 
+                                    },
+                                    supportingContent = { 
+                                        Text(
+                                            "${chat.messages.size} mensajes", 
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        ) 
+                                    },
+                                    colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                                )
+                                HorizontalDivider(
+                                    modifier = Modifier.padding(horizontal = 16.dp),
+                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                                )
+                            }
+                        }
                     }
-                    Divider(color = MaterialTheme.colorScheme.outline)
                 }
             }
         }

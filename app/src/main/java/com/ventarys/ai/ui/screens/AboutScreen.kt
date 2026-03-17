@@ -5,13 +5,13 @@ import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -28,72 +28,89 @@ fun AboutScreen(onMenuClick: () -> Unit) {
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // App Logo Card
-            Card(
-                modifier = Modifier
-                    .size(140.dp)
-                    .clip(RoundedCornerShape(20.dp)),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                )
+            Spacer(modifier = Modifier.height(40.dp))
+            
+            // App Logo
+            Surface(
+                modifier = Modifier.size(100.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.surfaceVariant
             ) {
                 Image(
                     painter = painterResource(id = R.mipmap.ic_launcher_foreground),
                     contentDescription = "App Logo",
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(12.dp)
+                        .padding(16.dp)
                 )
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(24.dp))
 
-            // App Version
+            Text(
+                text = "Ventarys AI",
+                style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            
             Text(
                 text = "Versión 1.0.0",
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(48.dp))
 
-            // Developer Info
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+            // Info Section
+            Surface(
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                shape = MaterialTheme.shapes.large,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Text(
-                    text = "Creado por",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = "JNTX Studio",
-                    style = MaterialTheme.typography.titleLarge.copy(
-                        fontWeight = FontWeight.Bold
-                    ),
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Desarrollador",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "JNTX Studio",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    Text(
+                        text = "Tecnologías",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = "Kotlin, Jetpack Compose, OpenAI API",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(32.dp))
 
             // GitHub Button
-            Button(
+            OutlinedButton(
                 onClick = {
                     val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Juanoto2012"))
                     context.startActivity(intent)
                 },
                 modifier = Modifier
-                    .fillMaxWidth(0.8f)
+                    .fillMaxWidth()
                     .height(56.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.secondary,
-                    contentColor = MaterialTheme.colorScheme.onSecondary
-                ),
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Icon(
@@ -101,7 +118,7 @@ fun AboutScreen(onMenuClick: () -> Unit) {
                     contentDescription = null,
                     modifier = Modifier.size(20.dp)
                 )
-                Spacer(modifier = Modifier.width(8.dp))
+                Spacer(modifier = Modifier.width(12.dp))
                 Text(
                     text = "GitHub: Juanoto2012",
                     style = MaterialTheme.typography.bodyLarge,
@@ -109,15 +126,13 @@ fun AboutScreen(onMenuClick: () -> Unit) {
                 )
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(40.dp))
 
-            // Additional Info
             Text(
-                text = "Desarrollado con ❤️ usando Kotlin y Jetpack Compose",
+                text = "Desarrollado con ❤️\n2024",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 32.dp)
+                textAlign = TextAlign.Center
             )
         }
     }
