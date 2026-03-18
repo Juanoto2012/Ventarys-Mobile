@@ -1,1 +1,1 @@
-Modern AI chat client for Android with multiple providers.
+Modern multimodal AI assistant powered by Ventarys, Groq, and more.

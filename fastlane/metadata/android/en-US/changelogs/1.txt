@@ -1,0 +1,5 @@
+- Initial release of Ventarys AI.
+- Multimodal support with image and file analysis.
+- Integration with multiple providers: Ventarys (Free), Groq, Aqua AI, and Hugging Face.
+- Chat history and local backup features.
+- Modern Material 3 interface with dynamic theme support.
