@@ -1,26 +1,30 @@
 package com.ventarys.ai
 
 import android.app.Application
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
+import android.speech.tts.TextToSpeech
+import android.util.Base64
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.outlined.*
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.AndroidViewModel
@@ -28,7 +32,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -46,8 +49,10 @@ import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.Date
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 // --- MODELS & CONSTANTS --- //
@@ -60,33 +65,191 @@ object AppDestinations {
 
 enum class ThemeOption { System, Light, Dark }
 
-enum class AIProvider(val displayName: String, val baseUrl: String, val defaultModels: List<String>) {
-    VENTARYS("Ventarys (Free)", "https://api.llm7.io/v1", listOf("codestral-latest", "llama-3-70b", "gpt-4o-mini")),
-    GROQ("Groq Cloud", "https://api.groq.com/openai/v1", listOf("llama-3.1-8b-instant", "llama-3.1-70b-versatile", "gemma2-9b-it", "mixtral-8x7b-32768")),
-    OPEN_ROUTER("OpenRouter", "https://openrouter.ai/api/v1", listOf("google/gemma-2-9b-it:free", "mistralai/mistral-7b-instruct:free", "meta-llama/llama-3-8b-instruct:free")),
-    HUGGING_FACE("Hugging Face", "https://api-inference.huggingface.co/v1", listOf("mistralai/Mistral-7B-Instruct-v0.2", "meta-llama/Meta-Llama-3-8B-Instruct"))
+enum class AIProvider(
+    val displayName: String,
+    val baseUrl: String,
+    val defaultModels: List<String>,
+    val apiKeyUrl: String? = null,
+    val timeoutSeconds: Long = 60L,
+    val supportsVision: Boolean = false
+) {
+    VENTARYS("Ventarys (Free)", "https://api.llm7.io/v1", listOf("codestral-latest", "llama-3-70b", "gpt-4o-mini"), null, 60L, true),
+    GROQ("Groq Cloud", "https://api.groq.com/openai/v1", listOf("llama-3.1-8b-instant", "llama-3.1-70b-versatile", "gemma2-9b-it", "mixtral-8x7b-32768", "llama-3.2-11b-vision-preview"), "https://console.groq.com/keys", 30L, true),
+    AQUA_AI("Aqua AI", "https://api.aquadevs.com/v1", listOf("gpt-4o-mini", "gpt-4o", "meta-llama-3.1-70b"), "https://aquadevs.com/dashboard", 300L, true),
+    HUGGING_FACE("Hugging Face", "https://api-inference.huggingface.co/v1", listOf("mistralai/Mistral-7B-Instruct-v0.2", "meta-llama/Meta-Llama-3-8B-Instruct"), "https://huggingface.co/settings/tokens", 60L, false)
 }
 
-data class Message(val text: String, val isFromUser: Boolean)
-data class APIMessage(val role: String, val content: String)
-data class ChatHistory(val id: String, val title: String, val messages: MutableList<Message>)
+data class ChatFile(
+    val name: String,
+    val type: String,
+    val size: Long,
+    val base64: String? = null
+)
+
+data class Message(
+    val role: String,
+    val content: String,
+    val files: List<ChatFile>? = null
+) {
+    val isFromUser: Boolean get() = role == "user"
+}
+
+data class APIMessage(val role: String, val content: Any)
+
+data class ChatHistory(
+    val id: String,
+    val title: String,
+    val messages: MutableList<Message>
+)
+
+// Backup structure to match web version
+data class BackupChat(
+    val title: String,
+    val messages: List<Message>
+)
+
+data class BackupData(
+    val allChats: Map<String, BackupChat>,
+    val currentChatId: String?
+)
 
 val SYSTEM_MESSAGE = APIMessage(
     role = "system",
     content = "Eres Ventarys AI. Responde de forma útil, precisa y concisa. Usa Markdown solo para negritas (**texto**) y listas (* elemento)."
 )
 
-class MainActivity : ComponentActivity() {
+class MainActivity : ComponentActivity(), TextToSpeech.OnInitListener {
     private val chatViewModel: ChatViewModel by viewModels()
+    private var tts: TextToSpeech? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        tts = TextToSpeech(this, this)
         enableEdgeToEdge()
         setContent {
             val themeOptionState = remember { mutableStateOf(ThemeOption.System) }
             VentarysChatTheme(themeOption = themeOptionState.value) {
                 val navController = rememberNavController()
-                VentarysNavHost(navController = navController, viewModel = chatViewModel, themeOptionState = themeOptionState)
+                VentarysNavHost(
+                    navController = navController,
+                    viewModel = chatViewModel,
+                    themeOptionState = themeOptionState,
+                    onSpeak = { text -> speak(text) }
+                )
+            }
+        }
+    }
+
+    override fun onInit(status: Int) {
+        if (status == TextToSpeech.SUCCESS) {
+            tts?.language = Locale.getDefault()
+        }
+    }
+
+    private fun speak(text: String) {
+        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, null)
+    }
+
+    override fun onDestroy() {
+        tts?.stop()
+        tts?.shutdown()
+        super.onDestroy()
+    }
+}
+
+@Composable
+fun VentarysNavHost(
+    navController: NavHostController,
+    viewModel: ChatViewModel,
+    themeOptionState: MutableState<ThemeOption>,
+    onSpeak: (String) -> Unit
+) {
+    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        drawerContent = {
+            ModalDrawerSheet {
+                Spacer(Modifier.height(12.dp))
+                NavigationDrawerItem(
+                    label = { Text("Chat") },
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        navController.navigate(AppDestinations.CHAT_ROUTE) {
+                            popUpTo(AppDestinations.CHAT_ROUTE) { inclusive = true }
+                        }
+                    },
+                    icon = { Icon(Icons.Default.Chat, null) },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+                NavigationDrawerItem(
+                    label = { Text("Historial") },
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        navController.navigate(AppDestinations.HISTORY_ROUTE)
+                    },
+                    icon = { Icon(Icons.Default.History, null) },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+                NavigationDrawerItem(
+                    label = { Text("Ajustes") },
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        navController.navigate(AppDestinations.SETTINGS_ROUTE)
+                    },
+                    icon = { Icon(Icons.Default.Settings, null) },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+                NavigationDrawerItem(
+                    label = { Text("Acerca de") },
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        navController.navigate(AppDestinations.ABOUT_ROUTE)
+                    },
+                    icon = { Icon(Icons.Default.Info, null) },
+                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                )
+            }
+        }
+    ) {
+        NavHost(navController = navController, startDestination = AppDestinations.CHAT_ROUTE) {
+            composable(AppDestinations.CHAT_ROUTE) {
+                ChatScreen(
+                    viewModel = viewModel,
+                    onMenuClick = { scope.launch { drawerState.open() } },
+                    onSpeak = onSpeak
+                )
+            }
+            composable(AppDestinations.HISTORY_ROUTE) {
+                HistoryScreen(
+                    viewModel = viewModel,
+                    onMenuClick = { scope.launch { drawerState.open() } },
+                    onChatClicked = { chatId ->
+                        viewModel.loadChat(chatId)
+                        navController.navigate(AppDestinations.CHAT_ROUTE) {
+                            popUpTo(AppDestinations.CHAT_ROUTE) { inclusive = true }
+                        }
+                    }
+                )
+            }
+            composable(AppDestinations.SETTINGS_ROUTE) {
+                SettingsScreen(
+                    viewModel = viewModel,
+                    onMenuClick = { scope.launch { drawerState.open() } },
+                    themeOption = themeOptionState.value,
+                    onThemeChange = { themeOptionState.value = it },
+                    onDeleteHistory = { viewModel.deleteAllChats() }
+                )
+            }
+            composable(AppDestinations.ABOUT_ROUTE) {
+                AboutScreen(
+                    onMenuClick = { scope.launch { drawerState.open() } }
+                )
             }
         }
     }
@@ -143,7 +306,7 @@ fun VentarysChatTheme(themeOption: ThemeOption, content: @Composable () -> Unit)
 // --- VIEWMODEL --- //
 class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val gson = Gson()
-    private val historyFile = File(application.filesDir, "chat_history.json")
+    private val historyFile = File(application.filesDir, "chat_history_v2.json")
     private val settingsFile = File(application.filesDir, "settings_v3.json")
 
     private val _chatHistories = MutableStateFlow<List<ChatHistory>>(emptyList())
@@ -173,7 +336,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     val isFetchingModels: StateFlow<Boolean> = _isFetchingModels.asStateFlow()
 
     private var currentChatId: String? = null
-    private val client = OkHttpClient.Builder().callTimeout(120, TimeUnit.SECONDS).build()
+    private val baseClient = OkHttpClient.Builder().callTimeout(120, TimeUnit.SECONDS).build()
 
     init {
         loadChatHistory()
@@ -214,6 +377,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         requestBuilder.addHeader("Authorization", "Bearer $apiKey")
                     }
 
+                    val client = baseClient.newBuilder()
+                        .callTimeout(30, TimeUnit.SECONDS)
+                        .build()
+
                     val response = client.newCall(requestBuilder.build()).execute()
                     if (response.isSuccessful) {
                         val body = response.body?.string() ?: ""
@@ -222,11 +389,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                         val modelList = mutableListOf<String>()
                         for (i in 0 until data.length()) {
                             val id = data.getJSONObject(i).getString("id")
-                            if (provider == AIProvider.OPEN_ROUTER) {
-                                if (id.endsWith(":free")) modelList.add(id)
-                            } else {
-                                modelList.add(id)
-                            }
+                            modelList.add(id)
                         }
                         modelList.sorted()
                     } else null
@@ -265,26 +428,63 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             if (currentChatId == null) {
                 currentChatId = Date().time.toString()
-                val newChat = ChatHistory(currentChatId!!, userInput.ifBlank { "Archivo adjunto" }, mutableListOf())
+                val title = if (userInput.isNotBlank()) {
+                    if (userInput.length > 30) userInput.take(30) + "..." else userInput
+                } else {
+                    "Chat con archivos"
+                }
+                val newChat = ChatHistory(currentChatId!!, title, mutableListOf())
                 _chatHistories.value += newChat
             }
 
-            var finalInput = userInput
-            if (attachedFiles.isNotEmpty()) {
-                val filesContent = extractFilesContent(attachedFiles)
-                finalInput += "\n\n[Contenido de archivos adjuntos]:\n$filesContent"
+            val chatFiles = attachedFiles.map { uri ->
+                val info = getFileInfo(uri)
+                ChatFile(
+                    name = info.name,
+                    type = info.type,
+                    size = info.size,
+                    base64 = if (info.type.startsWith("image/")) encodeImageToBase64(uri) else null
+                )
             }
 
-            val userMessage = Message(userInput, true)
+            val userMessage = Message("user", userInput, if (chatFiles.isEmpty()) null else chatFiles)
             addMessageToCurrentChat(userMessage)
             _isLoading.value = true
 
             try {
-                val apiHistory = mutableListOf(SYSTEM_MESSAGE) + _messages.value.dropLast(1).map { m -> APIMessage(if (m.isFromUser) "user" else "assistant", m.text) } + APIMessage("user", finalInput)
+                val provider = _currentProvider.value
+                val apiHistory = mutableListOf<APIMessage>()
+                apiHistory.add(SYSTEM_MESSAGE)
+                
+                _messages.value.dropLast(1).forEach { m ->
+                    apiHistory.add(APIMessage(m.role, m.content))
+                }
+
+                if (provider.supportsVision && chatFiles.any { it.type.startsWith("image/") }) {
+                    val contentArray = JSONArray()
+                    if (userInput.isNotBlank()) {
+                        contentArray.put(JSONObject().put("type", "text").put("text", userInput))
+                    }
+                    
+                    chatFiles.filter { it.type.startsWith("image/") }.forEach { file ->
+                        contentArray.put(JSONObject()
+                            .put("type", "image_url")
+                            .put("image_url", JSONObject().put("url", "data:${file.type};base64,${file.base64}")))
+                    }
+                    apiHistory.add(APIMessage("user", contentArray))
+                } else {
+                    var finalInput = userInput
+                    if (chatFiles.isNotEmpty()) {
+                        val filesContent = extractFilesContent(attachedFiles)
+                        finalInput += "\n\n[Contenido de archivos adjuntos]:\n$filesContent"
+                    }
+                    apiHistory.add(APIMessage("user", finalInput))
+                }
+
                 val responseText = generateText(apiHistory)
-                addMessageToCurrentChat(Message(responseText, false))
+                addMessageToCurrentChat(Message("assistant", responseText))
             } catch (e: Exception) {
-                addMessageToCurrentChat(Message("Error: ${e.message}", false))
+                addMessageToCurrentChat(Message("assistant", "Error: ${e.message}"))
             } finally {
                 _isLoading.value = false
                 saveChatHistory()
@@ -292,12 +492,45 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private data class FileInfo(val name: String, val type: String, val size: Long)
+
+    private fun getFileInfo(uri: Uri): FileInfo {
+        val contentResolver = getApplication<Application>().contentResolver
+        var name = "Archivo"
+        var size = 0L
+        val type = contentResolver.getType(uri) ?: "application/octet-stream"
+
+        contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIndex = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+            val sizeIndex = cursor.getColumnIndex(OpenableColumns.SIZE)
+            if (cursor.moveToFirst()) {
+                name = cursor.getString(nameIndex)
+                size = cursor.getLong(sizeIndex)
+            }
+        }
+        return FileInfo(name, type, size)
+    }
+
+    private suspend fun encodeImageToBase64(uri: Uri): String {
+        return withContext(Dispatchers.IO) {
+            val inputStream = getApplication<Application>().contentResolver.openInputStream(uri)
+            val bitmap = BitmapFactory.decodeStream(inputStream)
+            val outputStream = ByteArrayOutputStream()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 70, outputStream)
+            Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
+        }
+    }
+
     private suspend fun extractFilesContent(uris: List<Uri>): String {
         return withContext(Dispatchers.IO) {
             uris.joinToString("\n\n---\n\n") { uri ->
-                val fileName = uri.path?.substringAfterLast('/') ?: "Archivo"
-                val text = extractTextFromUri(uri)
-                "Archivo: $fileName\nContenido:\n$text"
+                val info = getFileInfo(uri)
+                val text = if (info.type.startsWith("text/")) {
+                    extractTextFromUri(uri)
+                } else {
+                    "[Archivo no textual: ${info.name}]"
+                }
+                "Archivo: ${info.name}\nContenido:\n$text"
             }
         }
     }
@@ -320,7 +553,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun saveChatHistory() {
         viewModelScope.launch(Dispatchers.IO) {
-            try { historyFile.writeText(gson.toJson(_chatHistories.value)) } catch (e: Exception) { e.printStackTrace() }
+            try {
+                val backup = getBackupData()
+                historyFile.writeText(gson.toJson(backup))
+            } catch (e: Exception) { e.printStackTrace() }
         }
     }
 
@@ -328,10 +564,51 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             if (historyFile.exists()) {
                 try {
-                    val type = object : TypeToken<List<ChatHistory>>() {}.type
-                    _chatHistories.value = gson.fromJson(historyFile.readText(), type)
-                } catch (e: Exception) { e.printStackTrace() }
+                    val type = object : TypeToken<BackupData>() {}.type
+                    val backup: BackupData = gson.fromJson(historyFile.readText(), type)
+                    _chatHistories.value = backup.allChats.map { (id, chat) ->
+                        ChatHistory(id, chat.title, chat.messages.toMutableList())
+                    }
+                    currentChatId = backup.currentChatId
+                    if (currentChatId != null) {
+                        _messages.value = backup.allChats[currentChatId]?.messages ?: emptyList()
+                    }
+                } catch (e: Exception) { 
+                    e.printStackTrace()
+                }
             }
+        }
+    }
+
+    private fun getBackupData(): BackupData {
+        return BackupData(
+            allChats = _chatHistories.value.associate { it.id to BackupChat(it.title, it.messages) },
+            currentChatId = currentChatId
+        )
+    }
+
+    fun getBackupJson(): String {
+        return gson.toJson(getBackupData())
+    }
+
+    fun restoreBackup(json: String): Boolean {
+        return try {
+            val type = object : TypeToken<BackupData>() {}.type
+            val backup: BackupData = gson.fromJson(json, type)
+            _chatHistories.value = backup.allChats.map { (id, chat) ->
+                ChatHistory(id, chat.title, chat.messages.toMutableList())
+            }
+            currentChatId = backup.currentChatId
+            if (currentChatId != null) {
+                _messages.value = backup.allChats[currentChatId]?.messages ?: emptyList()
+            } else {
+                _messages.value = emptyList()
+            }
+            saveChatHistory()
+            true
+        } catch (e: Exception) {
+            e.printStackTrace()
+            false
         }
     }
 
@@ -386,121 +663,47 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 val apiKey = _apiKeys.value[provider.name] ?: ""
                 val model = _selectedModels.value[provider.name] ?: provider.defaultModels.first()
                 
-                val mediaType = "application/json; charset=utf-8".toMediaType()
-                val messagesJson = JSONArray(history.map { JSONObject().put("role", it.role).put("content", it.content) })
-                val json = JSONObject()
-                    .put("messages", messagesJson)
-                    .put("model", model)
-                    .put("stream", false)
+                val messagesArray = JSONArray()
+                history.forEach { msg ->
+                    val obj = JSONObject()
+                    obj.put("role", msg.role)
+                    obj.put("content", msg.content)
+                    messagesArray.put(obj)
+                }
 
-                val requestBuilder = Request.Builder()
+                val jsonBody = JSONObject()
+                jsonBody.put("model", model)
+                jsonBody.put("messages", messagesArray)
+                jsonBody.put("stream", false)
+
+                val request = Request.Builder()
                     .url("${provider.baseUrl}/chat/completions")
-                    .post(json.toString().toRequestBody(mediaType))
-                
+                    .post(jsonBody.toString().toRequestBody("application/json".toMediaType()))
+                    
                 if (apiKey.isNotBlank()) {
-                    requestBuilder.addHeader("Authorization", "Bearer $apiKey")
+                    request.addHeader("Authorization", "Bearer $apiKey")
                 }
 
-                val response = client.newCall(requestBuilder.build()).execute()
-                if (!response.isSuccessful) {
-                    val errorBody = response.body?.string() ?: ""
-                    "Error de Proveedor (${provider.displayName}): ${response.code}\n$errorBody"
+                val client = baseClient.newBuilder()
+                    .callTimeout(provider.timeoutSeconds, TimeUnit.SECONDS)
+                    .readTimeout(provider.timeoutSeconds, TimeUnit.SECONDS)
+                    .build()
+
+                val response = client.newCall(request.build()).execute()
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    val jsonResponse = JSONObject(body)
+                    jsonResponse.getJSONArray("choices")
+                        .getJSONObject(0)
+                        .getJSONObject("message")
+                        .getString("content")
                 } else {
-                    val responseBody = response.body?.string()
-                    if (responseBody != null) {
-                        val jsonResponse = JSONObject(responseBody)
-                        jsonResponse.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content")
-                    } else "Sin respuesta"
+                    val error = response.body?.string() ?: "Unknown error"
+                    "Error API (${response.code}): $error"
                 }
-            } catch (e: Exception) { e.message ?: "Error desconocido" }
-        }
-    }
-}
-
-// --- NAVIGATION HOST --- //
-@Composable
-fun VentarysNavHost(navController: NavHostController, viewModel: ChatViewModel, themeOptionState: MutableState<ThemeOption>) {
-    val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
-    val scope = rememberCoroutineScope()
-    val navBackStackEntry by navController.currentBackStackEntryAsState()
-    val currentRoute = navBackStackEntry?.destination?.route ?: AppDestinations.CHAT_ROUTE
-
-    ModalNavigationDrawer(
-        drawerState = drawerState,
-        drawerContent = {
-            AppDrawer(
-                currentRoute = currentRoute,
-                onNavigate = { route -> navController.navigate(route) { launchSingleTop = true } },
-                onNewChat = {
-                    viewModel.startNewChat()
-                    navController.navigate(AppDestinations.CHAT_ROUTE) { launchSingleTop = true }
-                },
-                onClose = { scope.launch { drawerState.close() } }
-            )
-        }
-    ) {
-        NavHost(navController = navController, startDestination = AppDestinations.CHAT_ROUTE) {
-            composable(AppDestinations.CHAT_ROUTE) {
-                ChatScreen(viewModel = viewModel, onMenuClick = { scope.launch { drawerState.open() } })
-            }
-            composable(AppDestinations.HISTORY_ROUTE) {
-                HistoryScreen(viewModel = viewModel, onMenuClick = { scope.launch { drawerState.open() } }, onChatClicked = {
-                    viewModel.loadChat(it)
-                    navController.navigate(AppDestinations.CHAT_ROUTE)
-                })
-            }
-            composable(AppDestinations.SETTINGS_ROUTE) {
-                SettingsScreen(
-                    viewModel = viewModel,
-                    onMenuClick = { scope.launch { drawerState.open() } },
-                    themeOption = themeOptionState.value,
-                    onThemeChange = { themeOptionState.value = it },
-                    onDeleteHistory = { viewModel.deleteAllChats() }
-                )
-            }
-            composable(AppDestinations.ABOUT_ROUTE) {
-                AboutScreen(onMenuClick = { scope.launch { drawerState.open() } })
+            } catch (e: Exception) {
+                "Error de red: ${e.message}"
             }
         }
     }
-}
-
-@Composable
-fun AppDrawer(currentRoute: String, onNavigate: (String) -> Unit, onNewChat: () -> Unit, onClose: () -> Unit) {
-    ModalDrawerSheet(drawerContainerColor = MaterialTheme.colorScheme.surface) {
-        Spacer(Modifier.windowInsetsTopHeight(WindowInsets.statusBars))
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Image(painterResource(R.mipmap.ic_launcher_foreground), "Logo", Modifier.size(32.dp))
-            Spacer(Modifier.width(12.dp))
-            Text("Ventarys AI", style = MaterialTheme.typography.titleLarge)
-        }
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
-        NavigationDrawerItem(
-            icon = { Icon(Icons.Default.Add, null) },
-            label = { Text("Nuevo Chat") },
-            selected = false,
-            onClick = { onNewChat(); onClose() }
-        )
-        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
-        DrawerItem(Icons.Outlined.Forum, "Chat", currentRoute == AppDestinations.CHAT_ROUTE) { onNavigate(AppDestinations.CHAT_ROUTE); onClose() }
-        DrawerItem(Icons.Outlined.History, "Historial", currentRoute == AppDestinations.HISTORY_ROUTE) { onNavigate(AppDestinations.HISTORY_ROUTE); onClose() }
-        DrawerItem(Icons.Outlined.Settings, "Ajustes", currentRoute == AppDestinations.SETTINGS_ROUTE) { onNavigate(AppDestinations.SETTINGS_ROUTE); onClose() }
-        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
-        DrawerItem(Icons.Outlined.Info, "Acerca de", currentRoute == AppDestinations.ABOUT_ROUTE) { onNavigate(AppDestinations.ABOUT_ROUTE); onClose() }
-    }
-}
-
-@Composable
-fun DrawerItem(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
-    NavigationDrawerItem(
-        icon = { Icon(icon, null) },
-        label = { Text(label) },
-        selected = selected,
-        onClick = onClick,
-        colors = NavigationDrawerItemDefaults.colors(
-            selectedContainerColor = MaterialTheme.colorScheme.surfaceVariant,
-            selectedIconColor = MaterialTheme.colorScheme.primary,
-            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    )
 }

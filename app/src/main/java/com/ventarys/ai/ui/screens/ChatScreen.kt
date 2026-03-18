@@ -1,6 +1,11 @@
 package com.ventarys.ai.ui.screens
 
+import android.content.ClipboardManager
+import android.content.Context
+import android.graphics.BitmapFactory
 import android.net.Uri
+import android.util.Base64
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -16,7 +21,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.ClickableText
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,6 +32,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
@@ -33,16 +42,18 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ventarys.ai.ChatFile
 import com.ventarys.ai.ChatViewModel
 import com.ventarys.ai.Message
 import com.ventarys.ai.R
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ChatScreen(viewModel: ChatViewModel, onMenuClick: () -> Unit) {
+fun ChatScreen(viewModel: ChatViewModel, onMenuClick: () -> Unit, onSpeak: (String) -> Unit) {
     val listState = rememberLazyListState()
     val messages by viewModel.messages.collectAsState()
     val isLoading by viewModel.isLoading.collectAsState()
@@ -104,7 +115,9 @@ fun ChatScreen(viewModel: ChatViewModel, onMenuClick: () -> Unit) {
                         state = listState,
                         contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp)
                     ) {
-                        items(messages) { message -> MessageBubble(message = message) }
+                        items(messages) { message -> 
+                            MessageBubble(message = message, onSpeak = onSpeak) 
+                        }
                         if (isLoading) {
                             item { LoadingIndicator() }
                         }
@@ -303,7 +316,8 @@ fun FilePreviewItem(uri: Uri, onRemove: () -> Unit) {
 }
 
 @Composable
-fun MessageBubble(message: Message) {
+fun MessageBubble(message: Message, onSpeak: (String) -> Unit) {
+    val context = LocalContext.current
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -324,23 +338,126 @@ fun MessageBubble(message: Message) {
                 Spacer(Modifier.width(12.dp))
             }
 
-            if (message.isFromUser) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = RoundedCornerShape(18.dp)
-                ) {
-                    Text(
-                        message.text,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                        style = MaterialTheme.typography.bodyLarge.copy(
-                            lineHeight = 22.sp,
-                            fontSize = 16.sp
-                        )
-                    )
+            Column(
+                horizontalAlignment = if (message.isFromUser) Alignment.End else Alignment.Start,
+                modifier = Modifier.weight(1f, fill = false)
+            ) {
+                // Display attached files
+                message.files?.let { files ->
+                    files.forEach { file ->
+                        AttachmentItem(file = file)
+                        Spacer(Modifier.height(4.dp))
+                    }
                 }
-            } else {
-                Box(modifier = Modifier.weight(1f)) {
-                    ManualMarkdownText(text = message.text)
+
+                if (message.isFromUser) {
+                    if (message.content.isNotBlank()) {
+                        Surface(
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            shape = RoundedCornerShape(18.dp)
+                        ) {
+                            Text(
+                                message.content,
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                style = MaterialTheme.typography.bodyLarge.copy(
+                                    lineHeight = 22.sp,
+                                    fontSize = 16.sp
+                                )
+                            )
+                        }
+                    }
+                } else {
+                    Column {
+                        ManualMarkdownText(text = message.content)
+                        
+                        Row(
+                            modifier = Modifier.padding(top = 4.dp),
+                            horizontalArrangement = Arrangement.Start
+                        ) {
+                            IconButton(onClick = { onSpeak(message.content) }, modifier = Modifier.size(32.dp)) {
+                                Icon(
+                                    Icons.AutoMirrored.Outlined.VolumeUp,
+                                    contentDescription = "Listen",
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            IconButton(
+                                onClick = { 
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    val clip = android.content.ClipData.newPlainText("Ventarys AI", message.content)
+                                    clipboard.setPrimaryClip(clip)
+                                    Toast.makeText(context, "Copiado al portapapeles", Toast.LENGTH_SHORT).show()
+                                }, 
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    Icons.Outlined.ContentCopy,
+                                    contentDescription = "Copy",
+                                    modifier = Modifier.size(18.dp),
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AttachmentItem(file: ChatFile) {
+    if (file.type.startsWith("image/") && file.base64 != null) {
+        val bitmap = remember(file.base64) {
+            try {
+                val decodedString = Base64.decode(file.base64, Base64.DEFAULT)
+                BitmapFactory.decodeByteArray(decodedString, 0, decodedString.size)
+            } catch (e: Exception) {
+                null
+            }
+        }
+        
+        bitmap?.let {
+            Image(
+                bitmap = it.asImageBitmap(),
+                contentDescription = file.name,
+                modifier = Modifier
+                    .widthIn(max = 300.dp)
+                    .heightIn(max = 400.dp)
+                    .clip(RoundedCornerShape(12.dp)),
+                contentScale = ContentScale.Fit
+            )
+        }
+    } else {
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.widthIn(max = 240.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.InsertDriveFile,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Text(
+                        text = file.name,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = file.type.uppercase(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
                 }
             }
         }
