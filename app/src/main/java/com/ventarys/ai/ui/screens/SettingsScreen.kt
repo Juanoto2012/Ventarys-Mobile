@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -12,6 +14,8 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -46,6 +50,24 @@ fun SettingsScreen(
 
     var showRestoreDialog by remember { mutableStateOf(false) }
     var backupInput by remember { mutableStateOf("") }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            try {
+                val inputStream = context.contentResolver.openInputStream(it)
+                val json = inputStream?.bufferedReader()?.use { reader -> reader.readText() }
+                if (json != null && viewModel.restoreBackup(json)) {
+                    Toast.makeText(context, "Copia restaurada desde archivo", Toast.LENGTH_SHORT).show()
+                } else {
+                    Toast.makeText(context, "Error: Archivo inválido", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Error al leer archivo", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
 
     GenericScreen(title = "Ajustes", onMenuClick = onMenuClick) {
         Column(
@@ -289,10 +311,15 @@ fun SettingsScreen(
                     )
                     ListItem(
                         headlineContent = { Text("Importar chats") },
-                        supportingContent = { Text("Restaura chats desde un JSON") },
+                        supportingContent = { Text("Restaura chats desde JSON (Texto o Archivo)") },
                         trailingContent = {
-                            Button(onClick = { showRestoreDialog = true }) {
-                                Text("Importar")
+                            Row {
+                                IconButton(onClick = { filePickerLauncher.launch("application/json") }) {
+                                    Icon(Icons.Default.FileUpload, "Importar desde archivo")
+                                }
+                                Button(onClick = { showRestoreDialog = true }) {
+                                    Text("Texto")
+                                }
                             }
                         },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent)

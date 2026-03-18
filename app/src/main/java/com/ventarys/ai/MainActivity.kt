@@ -12,26 +12,41 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.outlined.History
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
@@ -166,54 +181,169 @@ fun VentarysNavHost(
 ) {
     val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
     val scope = rememberCoroutineScope()
+    val navBackStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = navBackStackEntry?.destination?.route
 
     ModalNavigationDrawer(
         drawerState = drawerState,
         drawerContent = {
-            ModalDrawerSheet {
-                Spacer(Modifier.height(12.dp))
+            ModalDrawerSheet(
+                drawerContainerColor = MaterialTheme.colorScheme.surface,
+                drawerTonalElevation = 0.dp,
+                windowInsets = WindowInsets.systemBars
+            ) {
+                // Header - "Old style" but modern and full
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surfaceVariant)
+                        .padding(horizontal = 24.dp, vertical = 32.dp)
+                ) {
+                    Column {
+                        Box(
+                            modifier = Modifier
+                                .size(64.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Image(
+                                painter = painterResource(id = R.mipmap.ic_launcher_foreground),
+                                contentDescription = "Logo",
+                                modifier = Modifier.size(48.dp),
+                                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onPrimary)
+                            )
+                        }
+                        
+                        Spacer(Modifier.height(16.dp))
+                        
+                        Text(
+                            text = "Ventarys AI",
+                            style = MaterialTheme.typography.titleLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = (-0.5).sp
+                            ),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "IA Generativa Multimodal",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                
+                Spacer(Modifier.height(8.dp))
+                
+                Text(
+                    "MENÚ",
+                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(start = 28.dp, top = 16.dp, bottom = 8.dp)
+                )
+
                 NavigationDrawerItem(
-                    label = { Text("Chat") },
-                    selected = false,
+                    label = { Text("Chat Principal", fontWeight = FontWeight.Medium) },
+                    selected = currentRoute == AppDestinations.CHAT_ROUTE,
                     onClick = {
                         scope.launch { drawerState.close() }
                         navController.navigate(AppDestinations.CHAT_ROUTE) {
                             popUpTo(AppDestinations.CHAT_ROUTE) { inclusive = true }
                         }
                     },
-                    icon = { Icon(Icons.Default.Chat, null) },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    icon = { 
+                        Icon(
+                            if (currentRoute == AppDestinations.CHAT_ROUTE) Icons.AutoMirrored.Filled.Chat else Icons.AutoMirrored.Outlined.Chat, 
+                            null 
+                        ) 
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = NavigationDrawerItemDefaults.colors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 )
+                
                 NavigationDrawerItem(
-                    label = { Text("Historial") },
-                    selected = false,
+                    label = { Text("Historial", fontWeight = FontWeight.Medium) },
+                    selected = currentRoute == AppDestinations.HISTORY_ROUTE,
                     onClick = {
                         scope.launch { drawerState.close() }
                         navController.navigate(AppDestinations.HISTORY_ROUTE)
                     },
-                    icon = { Icon(Icons.Default.History, null) },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    icon = { 
+                        Icon(
+                            if (currentRoute == AppDestinations.HISTORY_ROUTE) Icons.Default.History else Icons.Outlined.History, 
+                            null 
+                        ) 
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = NavigationDrawerItemDefaults.colors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 )
+                
+                Spacer(Modifier.weight(1f))
+                
+                HorizontalDivider(
+                    Modifier.padding(horizontal = 28.dp, vertical = 8.dp), 
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                )
+                
                 NavigationDrawerItem(
-                    label = { Text("Ajustes") },
-                    selected = false,
+                    label = { Text("Ajustes", fontWeight = FontWeight.Medium) },
+                    selected = currentRoute == AppDestinations.SETTINGS_ROUTE,
                     onClick = {
                         scope.launch { drawerState.close() }
                         navController.navigate(AppDestinations.SETTINGS_ROUTE)
                     },
-                    icon = { Icon(Icons.Default.Settings, null) },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    icon = { 
+                        Icon(
+                            if (currentRoute == AppDestinations.SETTINGS_ROUTE) Icons.Default.Settings else Icons.Outlined.Settings, 
+                            null 
+                        ) 
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = NavigationDrawerItemDefaults.colors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        selectedIconColor = MaterialTheme.colorScheme.primary
+                    )
                 )
+                
                 NavigationDrawerItem(
-                    label = { Text("Acerca de") },
-                    selected = false,
+                    label = { Text("Acerca de", fontWeight = FontWeight.Medium) },
+                    selected = currentRoute == AppDestinations.ABOUT_ROUTE,
                     onClick = {
                         scope.launch { drawerState.close() }
                         navController.navigate(AppDestinations.ABOUT_ROUTE)
                     },
-                    icon = { Icon(Icons.Default.Info, null) },
-                    modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+                    icon = { 
+                        Icon(
+                            if (currentRoute == AppDestinations.ABOUT_ROUTE) Icons.Default.Info else Icons.Outlined.Info, 
+                            null 
+                        ) 
+                    },
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = NavigationDrawerItemDefaults.colors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        selectedIconColor = MaterialTheme.colorScheme.primary
+                    )
                 )
+                
+                Spacer(Modifier.height(16.dp))
             }
         }
     ) {
@@ -267,7 +397,9 @@ val GptLightColorScheme = lightColorScheme(
     onSurface = Color(0xFF212121),
     surfaceVariant = Color(0xFFF7F7F8),
     onSurfaceVariant = Color(0xFF424242),
-    outline = Color(0xFFE5E5E5)
+    outline = Color(0xFFE5E5E5),
+    primaryContainer = Color(0xFFE5E5E5),
+    onPrimaryContainer = Color(0xFF000000)
 )
 
 val GptDarkColorScheme = darkColorScheme(
@@ -281,7 +413,9 @@ val GptDarkColorScheme = darkColorScheme(
     onSurface = Color(0xFFECECF1),
     surfaceVariant = Color(0xFF2F2F2F),
     onSurfaceVariant = Color(0xFFD1D1D6),
-    outline = Color(0xFF3E3E3E)
+    outline = Color(0xFF3E3E3E),
+    primaryContainer = Color(0xFF3E3E3E),
+    onPrimaryContainer = Color(0xFFFFFFFF)
 )
 
 @Composable

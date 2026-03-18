@@ -124,7 +124,7 @@ fun AboutScreen(onMenuClick: () -> Unit) {
             Spacer(modifier = Modifier.height(40.dp))
 
             Text(
-                text = "Desarrollado con ❤️\n2024",
+                text = "Desarrollado con ❤️ y kotlin en\n2026",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
