@@ -1,0 +1,1 @@
+Ventarys AI es un asistente multimodal potente y rápido. Conéctate a varios proveedores de IA, incluidos Ventarys (Gratis), Groq, Aqua AI y Hugging Face. Las características incluyen visión de imágenes, análisis de archivos, historial de chat y una interfaz moderna Material 3 con soporte para modo oscuro. Experimenta la inteligencia sin límites.

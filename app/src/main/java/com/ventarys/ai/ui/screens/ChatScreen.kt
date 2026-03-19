@@ -98,55 +98,44 @@ fun ChatScreen(viewModel: ChatViewModel, onMenuClick: () -> Unit, onSpeak: (Stri
     ) { paddingValues ->
         Box(
             modifier = Modifier
+                .fillMaxSize()
                 .padding(paddingValues)
-                .fillMaxSize(),
-            contentAlignment = Alignment.TopCenter
         ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxHeight()
-                    .widthIn(max = 850.dp)
-            ) {
-                if (messages.isEmpty()) {
-                    WelcomeScreen()
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        state = listState,
-                        contentPadding = PaddingValues(top = 8.dp, bottom = 16.dp)
-                    ) {
-                        items(messages) { message -> 
-                            MessageBubble(message = message, onSpeak = onSpeak) 
-                        }
-                        if (isLoading) {
-                            item { LoadingIndicator() }
+            if (messages.isEmpty() && !isLoading) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.Center,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Image(
+                        painter = painterResource(id = R.mipmap.ic_launcher_foreground),
+                        contentDescription = null,
+                        modifier = Modifier.size(80.dp),
+                        colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        "¿En qué puedo ayudarte hoy?",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                }
+            } else {
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(bottom = 16.dp)
+                ) {
+                    items(messages) { message ->
+                        MessageBubble(message = message, onSpeak = onSpeak)
+                    }
+                    if (isLoading) {
+                        item {
+                            LoadingIndicator()
                         }
                     }
                 }
             }
-        }
-    }
-}
-
-@Composable
-fun WelcomeScreen() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Image(
-                painter = painterResource(R.mipmap.ic_launcher_foreground),
-                contentDescription = "App Logo",
-                modifier = Modifier.size(100.dp),
-                colorFilter = ColorFilter.tint(MaterialTheme.colorScheme.onBackground)
-            )
-            Spacer(Modifier.height(24.dp))
-            Text(
-                "¿En qué puedo ayudarte?",
-                style = MaterialTheme.typography.headlineSmall.copy(
-                    fontWeight = FontWeight.Medium,
-                    letterSpacing = (-0.5).sp
-                ),
-                color = MaterialTheme.colorScheme.onBackground
-            )
         }
     }
 }
@@ -228,14 +217,6 @@ fun MessageInput(isProcessing: Boolean, onSend: (String, List<Uri>) -> Unit) {
                             Icon(
                                 Icons.Default.AttachFile,
                                 contentDescription = "Attach",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                        IconButton(onClick = { /* More options */ }, modifier = Modifier.size(36.dp)) {
-                            Icon(
-                                Icons.Default.Add,
-                                contentDescription = "More",
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                 modifier = Modifier.size(20.dp)
                             )
@@ -374,7 +355,7 @@ fun MessageBubble(message: Message, onSpeak: (String) -> Unit) {
                             modifier = Modifier.padding(top = 4.dp),
                             horizontalArrangement = Arrangement.Start
                         ) {
-                            IconButton(onClick = { onSpeak(message.content) }, modifier = Modifier.size(32.dp)) {
+                            IconButton(onClick = { onSpeak(stripMarkdown(message.content)) }, modifier = Modifier.size(32.dp)) {
                                 Icon(
                                     Icons.AutoMirrored.Outlined.VolumeUp,
                                     contentDescription = "Listen",
@@ -404,6 +385,16 @@ fun MessageBubble(message: Message, onSpeak: (String) -> Unit) {
             }
         }
     }
+}
+
+fun stripMarkdown(text: String): String {
+    return text
+        .replace("""\*\*(.*?)\*\*""".toRegex(), "$1")
+        .replace("""\*(.*?)\*""".toRegex(), "$1")
+        .replace("""\[(.*?)\]\((.*?)\)""".toRegex(), "$1")
+        .replace("""^(\s*[*-]\s+)""".toRegex(), "")
+        .replace("""#+\s+""".toRegex(), "")
+        .replace("""`{1,3}.*?`{1,3}""".toRegex(), "")
 }
 
 @Composable

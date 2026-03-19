@@ -3,8 +3,10 @@ package com.ventarys.ai
 import android.app.Application
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.Bundle
+import android.os.ParcelFileDescriptor
 import android.provider.OpenableColumns
 import android.speech.tts.TextToSpeech
 import android.util.Base64
@@ -21,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.outlined.Chat
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Settings
@@ -243,7 +246,22 @@ fun VentarysNavHost(
                 )
 
                 NavigationDrawerItem(
-                    label = { Text("Chat Principal", fontWeight = FontWeight.Medium) },
+                    label = { Text("Nuevo Chat", fontWeight = FontWeight.Medium) },
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        viewModel.startNewChat()
+                        navController.navigate(AppDestinations.CHAT_ROUTE) {
+                            popUpTo(AppDestinations.CHAT_ROUTE) { inclusive = true }
+                        }
+                    },
+                    icon = { Icon(Icons.Default.Add, null) },
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp),
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                NavigationDrawerItem(
+                    label = { Text("Chat Actual", fontWeight = FontWeight.Medium) },
                     selected = currentRoute == AppDestinations.CHAT_ROUTE,
                     onClick = {
                         scope.launch { drawerState.close() }
@@ -659,13 +677,33 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         return withContext(Dispatchers.IO) {
             uris.joinToString("\n\n---\n\n") { uri ->
                 val info = getFileInfo(uri)
-                val text = if (info.type.startsWith("text/")) {
-                    extractTextFromUri(uri)
-                } else {
-                    "[Archivo no textual: ${info.name}]"
+                val text = when {
+                    info.type.startsWith("text/") -> extractTextFromUri(uri)
+                    info.type == "application/pdf" -> extractTextFromPdf(uri)
+                    else -> "[Archivo no soportado para análisis de texto: ${info.name}]"
                 }
                 "Archivo: ${info.name}\nContenido:\n$text"
             }
+        }
+    }
+
+    private fun extractTextFromPdf(uri: Uri): String {
+        return try {
+            val pfd: ParcelFileDescriptor? = getApplication<Application>().contentResolver.openFileDescriptor(uri, "r")
+            if (pfd != null) {
+                val renderer = PdfRenderer(pfd)
+                val textBuilder = StringBuilder()
+                // Nota: PdfRenderer no extrae texto directamente, pero para propósitos de análisis simple 
+                // indicaremos al menos que se ha procesado. Una extracción de texto real en PDF requiere librerías como PDFBox.
+                // Como solución nativa ligera, indicamos la metadata básica.
+                textBuilder.append("[Análisis de PDF nativo: ${renderer.pageCount} páginas]\n")
+                textBuilder.append("(La extracción de texto completa de PDF requiere OCR o PDFBox, el sistema ha leído la estructura básica)")
+                renderer.close()
+                pfd.close()
+                textBuilder.toString()
+            } else "[No se pudo abrir el PDF]"
+        } catch (e: Exception) {
+            "[Error leyendo PDF: ${e.message}]"
         }
     }
 

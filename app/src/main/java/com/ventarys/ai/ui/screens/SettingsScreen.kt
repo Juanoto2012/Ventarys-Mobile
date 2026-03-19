@@ -1,6 +1,5 @@
 package com.ventarys.ai.ui.screens
 
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -15,6 +14,7 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.sp
 import com.ventarys.ai.AIProvider
 import com.ventarys.ai.ChatViewModel
 import com.ventarys.ai.ThemeOption
+import java.io.File
+import java.io.FileOutputStream
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -48,9 +50,6 @@ fun SettingsScreen(
     val dynamicModels by viewModel.dynamicModels.collectAsState()
     val isFetchingModels by viewModel.isFetchingModels.collectAsState()
 
-    var showRestoreDialog by remember { mutableStateOf(false) }
-    var backupInput by remember { mutableStateOf("") }
-
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -65,6 +64,22 @@ fun SettingsScreen(
                 }
             } catch (e: Exception) {
                 Toast.makeText(context, "Error al leer archivo", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val createDocumentLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        uri?.let {
+            try {
+                val json = viewModel.getBackupJson()
+                context.contentResolver.openOutputStream(it)?.use { outputStream ->
+                    outputStream.write(json.toByteArray())
+                }
+                Toast.makeText(context, "Copia de seguridad guardada", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(context, "Error al guardar archivo", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -291,16 +306,17 @@ fun SettingsScreen(
                 Column {
                     ListItem(
                         headlineContent = { Text("Exportar chats") },
-                        supportingContent = { Text("Copia el JSON de tus chats al portapapeles") },
+                        supportingContent = { Text("Guarda un archivo JSON con tus chats") },
                         trailingContent = {
-                            Button(onClick = {
-                                val json = viewModel.getBackupJson()
-                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                val clip = android.content.ClipData.newPlainText("Ventarys Backup", json)
-                                clipboard.setPrimaryClip(clip)
-                                Toast.makeText(context, "Copia de seguridad copiada", Toast.LENGTH_SHORT).show()
+                            Button(onClick = { 
+                                val fileName = "ventarys_backup_${System.currentTimeMillis()}.json"
+                                createDocumentLauncher.launch(fileName)
                             }) {
-                                Text("Exportar")
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.FileDownload, null, Modifier.size(18.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Exportar")
+                                }
                             }
                         },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -311,14 +327,13 @@ fun SettingsScreen(
                     )
                     ListItem(
                         headlineContent = { Text("Importar chats") },
-                        supportingContent = { Text("Restaura chats desde JSON (Texto o Archivo)") },
+                        supportingContent = { Text("Restaura chats desde un archivo JSON") },
                         trailingContent = {
-                            Row {
-                                IconButton(onClick = { filePickerLauncher.launch("application/json") }) {
-                                    Icon(Icons.Default.FileUpload, "Importar desde archivo")
-                                }
-                                Button(onClick = { showRestoreDialog = true }) {
-                                    Text("Texto")
+                            Button(onClick = { filePickerLauncher.launch("application/json") }) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.FileUpload, null, Modifier.size(18.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Importar")
                                 }
                             }
                         },
@@ -350,43 +365,5 @@ fun SettingsScreen(
             
             Spacer(modifier = Modifier.height(40.dp))
         }
-    }
-
-    if (showRestoreDialog) {
-        AlertDialog(
-            onDismissRequest = { showRestoreDialog = false },
-            title = { Text("Importar Copia de Seguridad") },
-            text = {
-                Column {
-                    Text("Pega el JSON de tu copia de seguridad aquí:")
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
-                        value = backupInput,
-                        onValueChange = { backupInput = it },
-                        modifier = Modifier.fillMaxWidth().height(200.dp),
-                        textStyle = MaterialTheme.typography.bodySmall,
-                        placeholder = { Text("{ \"allChats\": ... }") }
-                    )
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    if (viewModel.restoreBackup(backupInput)) {
-                        Toast.makeText(context, "Copia restaurada con éxito", Toast.LENGTH_SHORT).show()
-                        showRestoreDialog = false
-                        backupInput = ""
-                    } else {
-                        Toast.makeText(context, "Error: Formato JSON inválido", Toast.LENGTH_SHORT).show()
-                    }
-                }) {
-                    Text("Restaurar")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showRestoreDialog = false }) {
-                    Text("Cancelar")
-                }
-            }
-        )
     }
 }
