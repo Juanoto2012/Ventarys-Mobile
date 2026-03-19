@@ -37,4 +37,4 @@ Ventarys AI es una aplicación de chat moderna para Android inspirada en la inte
 4. Ejecuta en un dispositivo físico o emulador.
 
 ---
-Desarrollado por [JNTX Studio](https://github.com/Juanoto2012) - 2024
+Desarrollado por [JNTX Studio](https://github.com/Juanoto2012) - 2026
