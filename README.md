@@ -1,21 +1,14 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Ventarys AI
 
-# Run and deploy your AI Studio app
+Ventarys AI is an Android wrapper application designed to provide a seamless and fast web experience. It is optimized to work with Puter, supporting popups, third-party cookies, and handling redirects smoothly.
 
-This contains everything you need to run your app locally.
+## Features
+- **Optimized WebView:** Fast and responsive web experience with JavaScript, DOM storage, and database support enabled.
+- **Puter Login Support:** Fully supports third-party cookies, multiple windows, and redirects required for Puter login.
+- **Adaptive UI:** Automatically adapts the status bar and navigation bar to match your system's light or dark theme, allowing the web app to control its own internal theming.
+- **Splash Screen:** Displays a clean splash screen with the app logo while the initial web content is loading.
+- **Permissions Handling:** Securely handles microphone, camera, and other web permission requests.
+- **Custom Icon:** Adaptive app icon with proper padding configured for modern Android versions.
 
-View your app in AI Studio: https://ai.studio/apps/875ecf9a-68c3-4a21-929a-73a95f195ff7
-
-## Run Locally
-
-**Prerequisites:**  [Android Studio](https://developer.android.com/studio)
-
-
-1. Open Android Studio
-2. Select **Open** and choose the directory containing this project
-3. Allow Android Studio to fix any incompatibilities as it imports the project.
-4. Create a file named `.env` in the project directory and set `GEMINI_API_KEY` in that file to your Gemini API key (see `.env.example` for an example)
-5. Remove this line from the app's `build.gradle.kts` file: `signingConfig = signingConfigs.getByName("debugConfig")`
-6. Run the app on an emulator or physical device
+## Development
+This application is built using Kotlin and Jetpack Compose for the outer layout and theming, wrapping a highly-configured Android WebKit WebView.
