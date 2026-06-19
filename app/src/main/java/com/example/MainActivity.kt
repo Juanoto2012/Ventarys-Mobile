@@ -22,6 +22,9 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.net.Uri
+import android.webkit.ValueCallback
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -145,7 +148,32 @@ fun WebViewScreen(url: String, onMicPermissionRequested: (PermissionRequest) -> 
     var isLoading by remember { mutableStateOf(true) }
     var loadingProgress by remember { mutableFloatStateOf(0f) }
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
+    var filePathCallback by remember { mutableStateOf<ValueCallback<Array<Uri>>?>(null) }
     val isDarkTheme = isSystemInDarkTheme()
+    
+    val fileChooserLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == android.app.Activity.RESULT_OK) {
+            val data = result.data
+            val results = if (data != null) {
+                val clipData = data.clipData
+                if (clipData != null) {
+                    Array(clipData.itemCount) { i -> clipData.getItemAt(i).uri }
+                } else if (data.data != null) {
+                    arrayOf(data.data!!)
+                } else {
+                    null
+                }
+            } else {
+                null
+            }
+            filePathCallback?.onReceiveValue(results)
+        } else {
+            filePathCallback?.onReceiveValue(null)
+        }
+        filePathCallback = null
+    }
     
     LaunchedEffect(url) {
         webViewInstance?.loadUrl(url)
@@ -201,6 +229,27 @@ fun WebViewScreen(url: String, onMicPermissionRequested: (PermissionRequest) -> 
                     }
 
                     webChromeClient = object : WebChromeClient() {
+                        override fun onShowFileChooser(
+                            webView: WebView?,
+                            filePathCallbackParam: ValueCallback<Array<Uri>>?,
+                            fileChooserParams: FileChooserParams?
+                        ): Boolean {
+                            if (filePathCallback != null) {
+                                filePathCallback?.onReceiveValue(null)
+                            }
+                            filePathCallback = filePathCallbackParam
+                            if (fileChooserParams != null) {
+                                try {
+                                    fileChooserLauncher.launch(fileChooserParams.createIntent())
+                                } catch (e: Exception) {
+                                    filePathCallback?.onReceiveValue(null)
+                                    filePathCallback = null
+                                    return false
+                                }
+                            }
+                            return true
+                        }
+
                         override fun onProgressChanged(view: WebView?, newProgress: Int) {
                             loadingProgress = newProgress / 100f
                             if (newProgress == 100) isLoading = false
