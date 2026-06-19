@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Ventarys AI</string>
+    <string name="process_text_action">Preguntar a Ventarys</string>
+    <string name="sin_conexion">Sin Conexion conectate a internet para usar la app</string>
+</resources>

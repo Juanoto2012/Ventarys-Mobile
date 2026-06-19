@@ -1,0 +1,6 @@
+{
+  "name": "Ventarys",
+  "description": "Assistant wrapper for ventarys.net",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
