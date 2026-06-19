@@ -1,4 +1,4 @@
-<img src="app/src/main/res/drawable/logo.png" alt="" height="400" width="400">
+<img src="app/src/main/res/drawable/logo.png" alt="" height="200" width="200">
 
 # Ventarys AI
 
