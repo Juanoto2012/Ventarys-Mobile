@@ -1,3 +1,5 @@
+<img src="app/src/main/res/drawable/logo.png" alt="" height="400" width="400">
+
 # Ventarys AI
 
 Ventarys AI is an Android wrapper application designed to provide a seamless and fast web experience. It is optimized to work with Puter, supporting popups, third-party cookies, and handling redirects smoothly.
